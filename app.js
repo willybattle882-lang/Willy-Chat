@@ -12,6 +12,13 @@ let matchPollInterval = null
 let confirmResolver = null
 let autoNextTimeout = null
 
+// ========== UTIL: URL com conversão HEIC ==========
+function getDisplayUrl(originalUrl) {
+  if (!originalUrl) return ''
+  const separator = originalUrl.includes('?') ? '&' : '?'
+  return `${originalUrl}${separator}format=jpeg`
+}
+
 // ========== HASH ==========
 async function hashPassword(password) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
@@ -62,13 +69,20 @@ function updateSendBtn() {
 function previewFile(event) {
   const file = event.target.files[0]
   if (!file) return
-  const reader = new FileReader()
-  reader.onload = e => {
-    document.getElementById('preview-img').src = e.target.result
-    document.getElementById('preview-img').style.display = 'block'
-    document.getElementById('upload-placeholder').style.display = 'none'
+
+  // Apenas aviso sobre HEIC, mas permite upload
+  if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+    document.getElementById('upload-status').textContent = '⚠️ HEIC file – preview not available, but upload will work.'
+  } else {
+    const reader = new FileReader()
+    reader.onload = e => {
+      document.getElementById('preview-img').src = e.target.result
+      document.getElementById('preview-img').style.display = 'block'
+      document.getElementById('upload-placeholder').style.display = 'none'
+      document.getElementById('upload-status').textContent = ''
+    }
+    reader.readAsDataURL(file)
   }
-  reader.readAsDataURL(file)
   updateSendBtn()
 }
 
@@ -203,6 +217,8 @@ async function enterQueue() {
 
     if (existing) {
       console.log('[match] Já existe conversa ativa entre eles, ignorando')
+      // Remove both from queue anyway to avoid blocking
+      await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
       return
     }
 
@@ -212,8 +228,12 @@ async function enterQueue() {
       .select()
       .single()
 
-    if (error || !conv2) {
-      console.error('[match] Erro ao criar conversa:', error)
+    if (error) {
+      console.error('[match] Erro detalhado ao criar conversa:', error.message, error.details)
+      return
+    }
+    if (!conv2) {
+      console.error('[match] Nenhuma conversa retornada')
       return
     }
 
@@ -237,8 +257,8 @@ async function startChat(conv, partnerId) {
   const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
   currentConversation = { id: conv.id, partner_id: partnerId }
 
-  document.getElementById('my-photo-img').src = myProfile.photo_url
-  document.getElementById('partner-photo-img').src = partner.photo_url
+  document.getElementById('my-photo-img').src = getDisplayUrl(myProfile.photo_url)
+  document.getElementById('partner-photo-img').src = getDisplayUrl(partner.photo_url)
   document.getElementById('partner-status-label').textContent = 'online'
   document.getElementById('partner-status-label').style.color = '#9bff9b'
   document.getElementById('chat-status').textContent = ''
@@ -342,7 +362,7 @@ async function nextChat() {
   enterQueue()
 }
 
-// ========== EXIT ==========
+// ========== EXIT / CLEANUP (CORRIGIDA) ==========
 async function cleanup() {
   if (matchPollInterval) clearInterval(matchPollInterval)
   if (autoNextTimeout) clearTimeout(autoNextTimeout)
@@ -404,13 +424,13 @@ async function loadAdminPanel() {
     <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
       <div class="admin-conv-header">
         <div class="admin-photos">
-          <img src="${c.p1.photo_url}" class="admin-thumb" />
+          <img src="${getDisplayUrl(c.p1.photo_url)}" class="admin-thumb" />
           <span class="admin-code">#${c.p1.code}</span>
           <span class="admin-online ${c.p1.online ? 'on' : ''}"></span>
         </div>
         <span class="vs-small">💬</span>
         <div class="admin-photos">
-          <img src="${c.p2.photo_url}" class="admin-thumb" />
+          <img src="${getDisplayUrl(c.p2.photo_url)}" class="admin-thumb" />
           <span class="admin-code">#${c.p2.code}</span>
           <span class="admin-online ${c.p2.online ? 'on' : ''}"></span>
         </div>
