@@ -141,14 +141,26 @@ async function resumeWithCode() {
   enterQueue()
 }
 
-// ========== FILA ==========
+// ========== FILA (CORRIGIDA) ==========
 async function enterQueue() {
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
   console.log('[enterQueue] Colocando na fila ID:', myProfile.id)
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
-  await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
+  
+  // Remove qualquer entrada anterior e insere novamente (evita duplicatas)
+  await db.from('chat_waiting_queue').delete().eq('profile_id', myProfile.id)
+  await db.from('chat_waiting_queue').insert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
+  
+  // Verifica se foi inserido
+  const { data: check } = await db.from('chat_waiting_queue').select('profile_id').eq('profile_id', myProfile.id).maybeSingle()
+  if (!check) {
+    console.error('[enterQueue] Falha ao inserir na fila!')
+    document.getElementById('waiting-sub').textContent = 'Error entering queue. Try again.'
+    return
+  }
+  console.log('[enterQueue] Perfil confirmado na fila')
 
   matchPollInterval = setInterval(async () => {
     // 1. Check if already in a conversation
