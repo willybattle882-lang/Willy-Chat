@@ -146,6 +146,7 @@ async function enterQueue() {
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
+  console.log('[enterQueue] Colocando na fila ID:', myProfile.id)
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
@@ -158,6 +159,7 @@ async function enterQueue() {
       .maybeSingle()
 
     if (conv) {
+      console.log('[match] Já estou em conversa ativa, ID:', conv.id)
       clearInterval(matchPollInterval)
       const partnerId = conv.profile1_id === myProfile.id ? conv.profile2_id : conv.profile1_id
       await startChat(conv, partnerId)
@@ -174,8 +176,9 @@ async function enterQueue() {
 
     const p1 = queue[0].profile_id
     const p2 = queue[1].profile_id
+    console.log('[match] Fila atual:', p1, p2)
 
-    // Only the current user triggers the match, but now ANYONE can trigger
+    // Only continue if current user is one of them
     if (myProfile.id !== p1 && myProfile.id !== p2) return
 
     // Check if these two already have an active conversation
@@ -186,21 +189,29 @@ async function enterQueue() {
       .is('ended_at', null)
       .maybeSingle()
 
-    if (existing) return
+    if (existing) {
+      console.log('[match] Já existe conversa ativa entre eles, ignorando')
+      return
+    }
 
-    // Create conversation (the unique constraint will prevent duplicate)
+    // Create conversation
     const { data: conv2, error } = await db.from('chat_conversations')
       .insert({ profile1_id: p1, profile2_id: p2 })
       .select()
       .single()
 
-    if (error || !conv2) return
+    if (error || !conv2) {
+      console.error('[match] Erro ao criar conversa:', error)
+      return
+    }
 
-    // Remove both from queue and update profiles
+    console.log('[match] Conversa criada com sucesso:', conv2.id)
+
+    // Remove both from queue
     await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
     await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
 
-    // If this user is one of them, start chat
+    // Start chat for current user if he is one of them
     if (p1 === myProfile.id || p2 === myProfile.id) {
       clearInterval(matchPollInterval)
       const partnerId = p1 === myProfile.id ? p2 : p1
@@ -210,6 +221,7 @@ async function enterQueue() {
 }
 
 async function startChat(conv, partnerId) {
+  console.log('[startChat] Iniciando chat com partner:', partnerId)
   const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
   currentConversation = { id: conv.id, partner_id: partnerId }
 
@@ -441,10 +453,26 @@ function escapeHtml(str) {
 window.addEventListener('load', async () => {
   const savedCode = localStorage.getItem('my_chat_code')
   if (savedCode) {
+    console.log('[init] Código salvo encontrado:', savedCode)
     const { data: profile } = await db.from('chat_profiles').select('*').eq('code', savedCode).maybeSingle()
     if (profile) {
       myProfile = profile
       await db.from('chat_profiles').update({ online: true }).eq('id', myProfile.id)
+      // Verificar se já está em conversa ativa
+      const { data: activeConv } = await db.from('chat_conversations')
+        .select('*')
+        .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
+        .is('ended_at', null)
+        .maybeSingle()
+      if (activeConv) {
+        console.log('[init] Conversa ativa encontrada, iniciando chat')
+        const partnerId = activeConv.profile1_id === myProfile.id ? activeConv.profile2_id : activeConv.profile1_id
+        await startChat(activeConv, partnerId)
+      } else {
+        console.log('[init] Sem conversa ativa, entrando na fila')
+        enterQueue()
+      }
+      return
     } else {
       localStorage.removeItem('my_chat_code')
     }
