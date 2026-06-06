@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>PicMatch – anonymous photo chat</title>
+  <title>WillyChat</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
@@ -13,56 +13,93 @@
   <!-- HOME -->
   <div id="screen-home" class="screen active">
     <div class="home-bg"></div>
-    <header><h1 class="logo">PIC<span>MATCH</span></h1><p class="tagline">anonymous · photo chat · 18+</p></header>
+    <header>
+      <h1 class="logo">WILLY<span>CHAT</span></h1>
+      <p class="tagline">anonymous · photo chat · 18+</p>
+    </header>
     <div class="home-buttons">
       <button class="btn-main" onclick="startUpload()">📸 Start with a photo</button>
-      <button class="btn-main secondary" onclick="resumeWithId()">🔗 Resume with ID</button>
+      <button class="btn-main secondary" onclick="showResumeScreen()">🔗 I have a code</button>
     </div>
     <div id="online-count" class="total-label"></div>
-    <footer class="site-footer"><a href="#" onclick="showPrivacy()">Privacy</a></footer>
+    <footer class="site-footer"><a href="#" onclick="showScreen('screen-privacy')">Privacy</a></footer>
+  </div>
+
+  <!-- RESUME -->
+  <div id="screen-resume" class="screen">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <div class="card">
+      <h2>Enter your code</h2>
+      <p class="sub">Type your 6-digit profile code</p>
+      <input type="text" id="resume-code-input" class="input-field" placeholder="e.g. 483920" maxlength="6" />
+      <button class="btn-main" onclick="resumeWithCode()">Continue</button>
+      <p id="resume-error" class="status-msg error-msg"></p>
+    </div>
   </div>
 
   <!-- UPLOAD -->
   <div id="screen-upload" class="screen">
-    <button class="btn-back" onclick="showHome()">← Back</button>
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
     <div class="upload-box">
-      <h2>Send your photo</h2>
-      <p class="sub">Only you will have the secret ID</p>
+      <h2>Your photo</h2>
+      <p class="sub">Nobody will know it's you 👻</p>
       <label class="upload-area">
         <input type="file" id="file-input" accept="image/*" onchange="previewFile(event)" />
-        <div id="upload-placeholder">📷 Click to choose</div>
+        <div id="upload-placeholder"><span class="upload-icon">📷</span><span>Click to choose</span></div>
         <img id="preview-img" style="display:none" />
       </label>
-      <label class="consent-label"><input type="checkbox" id="consent-check" onchange="updateSendBtn()" /> <span>I am 18+ and consent to anonymous chat</span></label>
+      <label class="consent-label">
+        <input type="checkbox" id="consent-check" onchange="updateSendBtn()" />
+        <span>I am 18+ and consent to anonymous display</span>
+      </label>
       <button class="btn-main" id="btn-send" onclick="uploadPhoto()" disabled>Enter & find partner</button>
       <p id="upload-status" class="status-msg"></p>
     </div>
   </div>
 
-  <!-- WAITING FOR MATCH -->
+  <!-- SUCCESS / CODE -->
+  <div id="screen-code" class="screen">
+    <div class="card">
+      <div style="font-size:3rem">🎉</div>
+      <h2>You're in!</h2>
+      <p class="sub">Save your code to resume later</p>
+      <div class="code-display" id="profile-code-display">------</div>
+      <button class="btn-main" onclick="copyCode()">📋 Copy code</button>
+      <p class="sub warning">⚠️ Without this code you won't be able to resume your profile.</p>
+      <button class="btn-main secondary" onclick="enterQueue()">⚔️ Find a partner now</button>
+    </div>
+  </div>
+
+  <!-- WAITING -->
   <div id="screen-waiting" class="screen">
     <div class="loading-spinner"></div>
     <h2>Looking for someone...</h2>
-    <p class="sub">Waiting for another user to chat</p>
-    <button class="btn-main secondary" onclick="cancelWaiting()">Cancel</button>
+    <p class="sub" id="waiting-sub">Waiting for another user</p>
+    <button class="btn-main secondary" style="margin-top:2rem; max-width:200px" onclick="cancelWaiting()">Cancel</button>
   </div>
 
   <!-- CHAT -->
-  <div id="screen-chat" class="screen">
-    <button class="btn-back" onclick="exitChat()">← Exit</button>
-    <div class="chat-header">
-      <div class="chat-photo-pair">
-        <div class="chat-myphoto"><img id="my-photo-img" /><span>You</span></div>
-        <div class="vs-icon">💬</div>
-        <div class="chat-partner"><img id="partner-photo-img" /><span id="partner-status">online</span></div>
+  <div id="screen-chat" class="screen chat-screen">
+    <div class="chat-photos-row">
+      <div class="chat-photo-card my-card">
+        <img id="my-photo-img" />
+        <span class="photo-label">You</span>
       </div>
+      <div class="chat-photo-card partner-card">
+        <img id="partner-photo-img" />
+        <span class="photo-label" id="partner-status-label">online</span>
+      </div>
+    </div>
+    <div class="chat-toolbar">
+      <button class="btn-back-inline" onclick="exitChat()">← Exit</button>
       <button class="btn-next" id="next-btn" onclick="nextChat()">⟳ Next</button>
     </div>
     <div class="messages-container" id="messages-container">
-      <div class="empty-chat-msg">✨ Start typing...</div>
+      <div class="empty-chat-msg">✨ Say something!</div>
     </div>
     <div class="message-input-area">
-      <input type="text" id="message-input" placeholder="Anonymous message" maxlength="500" />
+      <input type="text" id="message-input" placeholder="Anonymous message" maxlength="500"
+        onkeydown="if(event.key==='Enter') sendMessage()" />
       <button id="send-btn" onclick="sendMessage()">Send</button>
     </div>
     <p id="chat-status" class="status-msg"></p>
@@ -70,27 +107,29 @@
 
   <!-- PRIVACY -->
   <div id="screen-privacy" class="screen">
-    <button class="btn-back" onclick="showHome()">← Back</button>
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
     <div class="card wide privacy-card">
       <h2>Privacy Policy</h2>
       <p class="privacy-date">Last updated: June 2026</p>
       <h3>Anonymous by design</h3>
       <p>No email, no username. Your photo is your identity. Messages are not linked to any personal data.</p>
+      <h3>Profile code</h3>
+      <p>Your 6-digit code is the only way to recover your profile. We do not store any information that links the code to your identity.</p>
       <h3>Chat storage</h3>
-      <p>All messages are stored encrypted in transit and at rest. They are only visible to the two participants of a conversation.</p>
+      <p>Messages are stored in transit and at rest. They are only accessible to the two participants of a conversation.</p>
       <h3>Consent & removal</h3>
-      <p>You must be 18+. You can delete your photo anytime via your secret link – all related messages and conversations will be removed.</p>
-      <button class="btn-main secondary" onclick="showHome()" style="margin-top:1rem">Back to home</button>
+      <p>You must be 18+. You consent to your photo being shown anonymously to matched users only.</p>
+      <button class="btn-main secondary" onclick="showScreen('screen-home')" style="margin-top:1rem">← Back</button>
     </div>
   </div>
 
   <!-- CONFIRM MODAL -->
   <div id="confirm-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:999; align-items:center; justify-content:center;">
-    <div style="background:#13131a; border:1px solid #2a2a3a; border-radius:16px; padding:1.8rem 1.5rem; max-width:300px; width:90%; text-align:center; gap:1rem; display:flex; flex-direction:column;">
-      <p id="confirm-message">End this conversation and find a new partner?</p>
+    <div class="modal-box">
+      <p id="confirm-message"></p>
       <div style="display:flex; gap:0.75rem;">
         <button class="btn-main secondary" style="flex:1" onclick="resolveConfirm(false)">Cancel</button>
-        <button class="btn-main" style="flex:1; background:#ff3c3c" onclick="resolveConfirm(true)">Yes, next</button>
+        <button class="btn-main" style="flex:1; background:#ff3c3c" onclick="resolveConfirm(true)">Yes</button>
       </div>
     </div>
   </div>
