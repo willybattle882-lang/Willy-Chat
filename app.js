@@ -11,10 +11,13 @@ let activeChannel = null
 let matchPollInterval = null
 let confirmResolver = null
 let autoNextTimeout = null
+let isMatching = false
 
-// ========== UTIL: URL com conversão HEIC ==========
+// ========== Helper: URL com conversão HEIC ==========
 function getDisplayUrl(originalUrl) {
   if (!originalUrl) return ''
+  // Se já tiver ?format=jpeg, não adiciona de novo
+  if (originalUrl.includes('format=jpeg')) return originalUrl
   const separator = originalUrl.includes('?') ? '&' : '?'
   return `${originalUrl}${separator}format=jpeg`
 }
@@ -69,8 +72,6 @@ function updateSendBtn() {
 function previewFile(event) {
   const file = event.target.files[0]
   if (!file) return
-
-  // Apenas aviso sobre HEIC, mas permite upload
   if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
     document.getElementById('upload-status').textContent = '⚠️ HEIC file – preview not available, but upload will work.'
   } else {
@@ -155,110 +156,139 @@ async function resumeWithCode() {
   enterQueue()
 }
 
-// ========== FILA (CORRIGIDA) ==========
+// ========== MATCH (corrigido) ==========
 async function enterQueue() {
-  showScreen('screen-waiting')
-  if (matchPollInterval) clearInterval(matchPollInterval)
-
-  console.log('[enterQueue] Colocando na fila ID:', myProfile.id)
-  await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
-  
-  // Remove qualquer entrada anterior e insere novamente (evita duplicatas)
-  await db.from('chat_waiting_queue').delete().eq('profile_id', myProfile.id)
-  await db.from('chat_waiting_queue').insert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
-  
-  // Verifica se foi inserido
-  const { data: check } = await db.from('chat_waiting_queue').select('profile_id').eq('profile_id', myProfile.id).maybeSingle()
-  if (!check) {
-    console.error('[enterQueue] Falha ao inserir na fila!')
-    document.getElementById('waiting-sub').textContent = 'Error entering queue. Try again.'
+  if (isMatching) {
+    console.log('[enterQueue] Já está pareando, ignorando...')
     return
   }
-  console.log('[enterQueue] Perfil confirmado na fila')
+  isMatching = true
+  try {
+    showScreen('screen-waiting')
+    if (matchPollInterval) clearInterval(matchPollInterval)
 
-  matchPollInterval = setInterval(async () => {
-    // 1. Check if already in a conversation
-    const { data: conv } = await db.from('chat_conversations')
-      .select('*')
-      .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
-      .is('ended_at', null)
-      .maybeSingle()
+    console.log('[enterQueue] Atualizando status online e waiting para ID:', myProfile.id)
+    await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
 
-    if (conv) {
-      console.log('[match] Já estou em conversa ativa, ID:', conv.id)
-      clearInterval(matchPollInterval)
-      const partnerId = conv.profile1_id === myProfile.id ? conv.profile2_id : conv.profile1_id
-      await startChat(conv, partnerId)
+    // Limpa entrada anterior na fila e insere nova
+    await db.from('chat_waiting_queue').delete().eq('profile_id', myProfile.id)
+    await db.from('chat_waiting_queue').insert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
+
+    // Verifica se foi inserido
+    const { data: check } = await db.from('chat_waiting_queue').select('profile_id').eq('profile_id', myProfile.id).maybeSingle()
+    if (!check) {
+      console.error('[enterQueue] Falha ao inserir na fila!')
+      document.getElementById('waiting-sub').textContent = 'Error entering queue. Try again.'
+      isMatching = false
       return
     }
+    console.log('[enterQueue] Perfil confirmado na fila')
 
-    // 2. Get first 2 in queue
-    const { data: queue } = await db.from('chat_waiting_queue')
-      .select('profile_id, joined_at')
-      .order('joined_at', { ascending: true })
-      .limit(2)
+    matchPollInterval = setInterval(async () => {
+      // Verifica se já entrou em conversa
+      const { data: conv } = await db.from('chat_conversations')
+        .select('*')
+        .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
+        .is('ended_at', null)
+        .maybeSingle()
+      if (conv) {
+        console.log('[match] Já estou em conversa ativa, ID:', conv.id)
+        clearInterval(matchPollInterval)
+        const partnerId = conv.profile1_id === myProfile.id ? conv.profile2_id : conv.profile1_id
+        await startChat(conv, partnerId)
+        isMatching = false
+        return
+      }
 
-    if (!queue || queue.length < 2) return
+      // Pega o primeiro da fila (que não seja eu)
+      const { data: queue } = await db.from('chat_waiting_queue')
+        .select('profile_id')
+        .order('joined_at', { ascending: true })
+        .limit(2)
 
-    const p1 = queue[0].profile_id
-    const p2 = queue[1].profile_id
-    console.log('[match] Fila atual:', p1, p2)
+      if (!queue || queue.length < 2) return
 
-    // Only continue if current user is one of them
-    if (myProfile.id !== p1 && myProfile.id !== p2) return
+      let p1 = queue[0].profile_id
+      let p2 = queue[1].profile_id
 
-    // Check if these two already have an active conversation
-    const { data: existing } = await db
-      .from('chat_conversations')
-      .select('id')
-      .or(`and(profile1_id.eq.${p1},profile2_id.eq.${p2}),and(profile1_id.eq.${p2},profile2_id.eq.${p1})`)
-      .is('ended_at', null)
-      .maybeSingle()
+      // Se o primeiro sou eu, tento parear com o segundo
+      if (p1 === myProfile.id) {
+        p1 = myProfile.id
+        p2 = queue[1].profile_id
+      } 
+      // Se o segundo sou eu, uso o primeiro
+      else if (p2 === myProfile.id) {
+        p2 = myProfile.id
+        p1 = queue[0].profile_id
+      } else {
+        // Se eu não estou entre os dois primeiros, não faço nada
+        return
+      }
 
-    if (existing) {
-      console.log('[match] Já existe conversa ativa entre eles, ignorando')
-      // Remove both from queue anyway to avoid blocking
+      console.log(`[match] Tentando parear ${p1} com ${p2}`)
+
+      // Verifica se já existe conversa ativa entre eles
+      const { data: existing } = await db
+        .from('chat_conversations')
+        .select('id')
+        .or(`and(profile1_id.eq.${p1},profile2_id.eq.${p2}),and(profile1_id.eq.${p2},profile2_id.eq.${p1})`)
+        .is('ended_at', null)
+        .maybeSingle()
+      if (existing) {
+        console.log('[match] Já existe conversa ativa, removendo da fila')
+        await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
+        return
+      }
+
+      // Cria conversa
+      const { data: conv2, error } = await db.from('chat_conversations')
+        .insert({ profile1_id: p1, profile2_id: p2 })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[match] Erro ao criar conversa:', error.message)
+        if (error.code === '23505') { // unique violation
+          await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
+        }
+        return
+      }
+
+      console.log('[match] Conversa criada com sucesso:', conv2.id)
+
+      // Remove da fila
       await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
-      return
-    }
+      await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
 
-    // Create conversation
-    const { data: conv2, error } = await db.from('chat_conversations')
-      .insert({ profile1_id: p1, profile2_id: p2 })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('[match] Erro detalhado ao criar conversa:', error.message, error.details)
-      return
-    }
-    if (!conv2) {
-      console.error('[match] Nenhuma conversa retornada')
-      return
-    }
-
-    console.log('[match] Conversa criada com sucesso:', conv2.id)
-
-    // Remove both from queue
-    await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
-    await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
-
-    // Start chat for current user if he is one of them
-    if (p1 === myProfile.id || p2 === myProfile.id) {
-      clearInterval(matchPollInterval)
-      const partnerId = p1 === myProfile.id ? p2 : p1
-      await startChat(conv2, partnerId)
-    }
-  }, 2000)
+      // Inicia chat para o usuário atual
+      if (p1 === myProfile.id || p2 === myProfile.id) {
+        clearInterval(matchPollInterval)
+        const partnerId = p1 === myProfile.id ? p2 : p1
+        await startChat(conv2, partnerId)
+        isMatching = false
+      }
+    }, 2000)
+  } finally {
+    // Não resetamos isMatching aqui porque o interval pode continuar; só resetamos quando o chat inicia ou dá erro fatal
+  }
 }
 
 async function startChat(conv, partnerId) {
   console.log('[startChat] Iniciando chat com partner:', partnerId)
   const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
+  if (!partner) {
+    console.error('[startChat] Partner não encontrado')
+    enterQueue()
+    return
+  }
+
   currentConversation = { id: conv.id, partner_id: partnerId }
 
-  document.getElementById('my-photo-img').src = getDisplayUrl(myProfile.photo_url)
-  document.getElementById('partner-photo-img').src = getDisplayUrl(partner.photo_url)
+  const myPhotoUrl = getDisplayUrl(myProfile.photo_url)
+  const partnerPhotoUrl = getDisplayUrl(partner.photo_url)
+
+  document.getElementById('my-photo-img').src = myPhotoUrl
+  document.getElementById('partner-photo-img').src = partnerPhotoUrl
   document.getElementById('partner-status-label').textContent = 'online'
   document.getElementById('partner-status-label').style.color = '#9bff9b'
   document.getElementById('chat-status').textContent = ''
@@ -362,7 +392,7 @@ async function nextChat() {
   enterQueue()
 }
 
-// ========== EXIT / CLEANUP (CORRIGIDA) ==========
+// ========== EXIT / CLEANUP ==========
 async function cleanup() {
   if (matchPollInterval) clearInterval(matchPollInterval)
   if (autoNextTimeout) clearTimeout(autoNextTimeout)
@@ -375,6 +405,7 @@ async function cleanup() {
     }
   }
   currentConversation = null
+  isMatching = false
 }
 
 async function exitChat() {
