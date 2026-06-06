@@ -1,5 +1,6 @@
 const SUPABASE_URL = 'https://ozyligilnzuhnkkobgxc.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eWxpZ2lsbnp1aG5ra29iZ3hjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2ODkyNjMsImV4cCI6MjA5NjI2NTI2M30.H64U-LWB_arJkS_73sMVF-1myh3VhnFnyVCtFjlEDUg'
+const ADMIN_HASH = 'd5764cde6afed69a3f868d9341685ca39cfd57ab0c7d7d6f7ed60be03c705255'
 
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_ANON)
@@ -9,6 +10,13 @@ let currentConversation = null
 let activeChannel = null
 let matchPollInterval = null
 let confirmResolver = null
+let autoNextTimeout = null
+
+// ========== HASH ==========
+async function hashPassword(password) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 // ========== MODAL ==========
 function showConfirm(msg) {
@@ -89,7 +97,6 @@ async function uploadPhoto() {
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
   const photoUrl = urlData.publicUrl
 
-  // Gera código de 6 dígitos único
   let code, exists = true
   while (exists) {
     code = String(Math.floor(100000 + Math.random() * 900000))
@@ -140,13 +147,10 @@ async function enterQueue() {
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
-  // Marca como waiting e entra na fila
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
-  // Poll a cada 2s pra ver se foi matcheado
   matchPollInterval = setInterval(async () => {
-    // Verifica se já tem conversa ativa
     const { data: conv } = await db.from('chat_conversations')
       .select('*')
       .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
@@ -160,7 +164,6 @@ async function enterQueue() {
       return
     }
 
-    // Tenta criar match se há 2+ na fila
     const { data: queue } = await db.from('chat_waiting_queue')
       .select('profile_id, joined_at')
       .order('joined_at', { ascending: true })
@@ -170,8 +173,6 @@ async function enterQueue() {
 
     const p1 = queue[0].profile_id
     const p2 = queue[1].profile_id
-
-    // Só o usuário com menor ID na fila tenta criar (evita race condition)
     if (myProfile.id !== p1 && myProfile.id !== p2) return
     if (myProfile.id !== Math.min(p1, p2)) return
 
@@ -179,12 +180,10 @@ async function enterQueue() {
       .insert({ profile1_id: p1, profile2_id: p2 })
       .select().single()
 
-    if (error || !conv2) return // outro já criou
+    if (error || !conv2) return
 
-    // Remove os dois da fila
     await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
     await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
-
   }, 2000)
 }
 
@@ -195,6 +194,8 @@ async function startChat(conv, partnerId) {
   document.getElementById('my-photo-img').src = myProfile.photo_url
   document.getElementById('partner-photo-img').src = partner.photo_url
   document.getElementById('partner-status-label').textContent = 'online'
+  document.getElementById('partner-status-label').style.color = '#9bff9b'
+  document.getElementById('chat-status').textContent = ''
 
   showScreen('screen-chat')
   await loadMessages(conv.id)
@@ -221,7 +222,8 @@ function subscribeToMessages(convId) {
       event: 'INSERT', schema: 'public', table: 'chat_messages',
       filter: `conversation_id=eq.${convId}`
     }, payload => {
-      appendMessage(payload.new)
+      // Evita duplicar mensagens próprias (já adicionadas no sendMessage)
+      if (payload.new.sender_id !== myProfile.id) appendMessage(payload.new)
     })
     .subscribe()
 }
@@ -230,7 +232,6 @@ function appendMessage(msg) {
   const container = document.getElementById('messages-container')
   const empty = container.querySelector('.empty-chat-msg')
   if (empty) empty.remove()
-
   const div = document.createElement('div')
   div.className = `message ${msg.sender_id === myProfile.id ? 'own' : ''}`
   div.innerHTML = `${escapeHtml(msg.content)}<small>${new Date(msg.created_at).toLocaleTimeString()}</small>`
@@ -261,7 +262,24 @@ function watchPartner(partnerId) {
       const label = document.getElementById('partner-status-label')
       label.textContent = online ? 'online' : 'offline'
       label.style.color = online ? '#9bff9b' : '#888'
-      if (!online) document.getElementById('chat-status').textContent = 'Partner disconnected. Click Next to find someone else.'
+
+      if (!online) {
+        document.getElementById('chat-status').textContent = 'Partner disconnected. Finding someone new in 5s...'
+        // Auto-next após 5 segundos
+        if (autoNextTimeout) clearTimeout(autoNextTimeout)
+        autoNextTimeout = setTimeout(async () => {
+          if (currentConversation) {
+            await db.from('chat_conversations').update({ ended_at: new Date().toISOString() }).eq('id', currentConversation.id)
+          }
+          if (activeChannel) activeChannel.unsubscribe()
+          currentConversation = null
+          document.getElementById('chat-status').textContent = ''
+          enterQueue()
+        }, 5000)
+      } else {
+        if (autoNextTimeout) clearTimeout(autoNextTimeout)
+        document.getElementById('chat-status').textContent = ''
+      }
     })
     .subscribe()
 }
@@ -270,7 +288,7 @@ function watchPartner(partnerId) {
 async function nextChat() {
   const confirmed = await showConfirm('End this conversation and find a new partner?')
   if (!confirmed) return
-
+  if (autoNextTimeout) clearTimeout(autoNextTimeout)
   if (currentConversation) {
     await db.from('chat_conversations').update({ ended_at: new Date().toISOString() }).eq('id', currentConversation.id)
   }
@@ -283,6 +301,7 @@ async function nextChat() {
 // ========== EXIT ==========
 async function cleanup() {
   if (matchPollInterval) clearInterval(matchPollInterval)
+  if (autoNextTimeout) clearTimeout(autoNextTimeout)
   if (activeChannel) { activeChannel.unsubscribe(); activeChannel = null }
   if (myProfile) {
     await db.from('chat_profiles').update({ online: false, waiting: false, current_conversation_id: null }).eq('id', myProfile.id)
@@ -304,6 +323,86 @@ async function cancelWaiting() {
   await cleanup()
   myProfile = null
   showHome()
+}
+
+// ========== ADMIN ==========
+function showAdminLogin() {
+  document.getElementById('admin-password').value = ''
+  document.getElementById('admin-login-error').textContent = ''
+  showScreen('screen-admin-login')
+}
+
+async function adminLogin() {
+  const password = document.getElementById('admin-password').value
+  const hash = await hashPassword(password)
+  if (hash !== ADMIN_HASH) {
+    document.getElementById('admin-login-error').textContent = 'Wrong password.'
+    return
+  }
+  loadAdminPanel()
+}
+
+async function loadAdminPanel() {
+  showScreen('screen-admin')
+  document.getElementById('admin-conversations').innerHTML = '<p class="status-msg">Loading...</p>'
+
+  const { data: convs } = await db.from('chat_conversations')
+    .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
+    .order('started_at', { ascending: false })
+    .limit(50)
+
+  if (!convs || convs.length === 0) {
+    document.getElementById('admin-conversations').innerHTML = '<p class="status-msg">No conversations yet.</p>'
+    return
+  }
+
+  document.getElementById('admin-conversations').innerHTML = convs.map(c => `
+    <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
+      <div class="admin-conv-header">
+        <div class="admin-photos">
+          <img src="${c.p1.photo_url}" class="admin-thumb" />
+          <span class="admin-code">#${c.p1.code}</span>
+          <span class="admin-online ${c.p1.online ? 'on' : ''}"></span>
+        </div>
+        <span class="vs-small">💬</span>
+        <div class="admin-photos">
+          <img src="${c.p2.photo_url}" class="admin-thumb" />
+          <span class="admin-code">#${c.p2.code}</span>
+          <span class="admin-online ${c.p2.online ? 'on' : ''}"></span>
+        </div>
+        <div class="admin-meta">
+          <span class="${c.ended_at ? 'ended' : 'active'}">${c.ended_at ? '⚫ Ended' : '🟢 Active'}</span>
+          <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
+        </div>
+      </div>
+      <div class="admin-messages" id="admin-msgs-${c.id}" style="display:none"></div>
+    </div>
+  `).join('')
+}
+
+async function loadAdminConvMessages(convId, card) {
+  const msgDiv = document.getElementById(`admin-msgs-${convId}`)
+  if (msgDiv.style.display !== 'none') { msgDiv.style.display = 'none'; return }
+
+  msgDiv.style.display = 'block'
+  msgDiv.innerHTML = '<p class="status-msg">Loading messages...</p>'
+
+  const { data: msgs } = await db.from('chat_messages')
+    .select('content, created_at, sender_id')
+    .eq('conversation_id', convId)
+    .order('created_at', { ascending: true })
+
+  if (!msgs || msgs.length === 0) {
+    msgDiv.innerHTML = '<p class="status-msg">No messages in this conversation.</p>'
+    return
+  }
+
+  msgDiv.innerHTML = msgs.map(m => `
+    <div class="admin-msg">
+      <small>${new Date(m.created_at).toLocaleTimeString()}</small>
+      <span>${escapeHtml(m.content)}</span>
+    </div>
+  `).join('')
 }
 
 // ========== ONLINE COUNT ==========

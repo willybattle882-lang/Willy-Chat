@@ -22,7 +22,7 @@
       <button class="btn-main secondary" onclick="showResumeScreen()">🔗 I have a code</button>
     </div>
     <div id="online-count" class="total-label"></div>
-    <footer class="site-footer"><a href="#" onclick="showScreen('screen-privacy')">Privacy</a></footer>
+    <footer class="site-footer"><a href="#" onclick="showScreen('screen-privacy')">Privacy</a> · <a href="#" onclick="showAdminLogin()">Admin</a></footer>
   </div>
 
   <!-- RESUME -->
@@ -121,6 +121,25 @@
       <p>You must be 18+. You consent to your photo being shown anonymously to matched users only.</p>
       <button class="btn-main secondary" onclick="showScreen('screen-home')" style="margin-top:1rem">← Back</button>
     </div>
+  </div>
+
+
+  <!-- ADMIN LOGIN -->
+  <div id="screen-admin-login" class="screen">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <div class="card">
+      <h2>🔒 Admin</h2>
+      <input type="password" id="admin-password" class="input-field" placeholder="Password" />
+      <button class="btn-main" onclick="adminLogin()">Enter</button>
+      <p id="admin-login-error" class="status-msg error-msg"></p>
+    </div>
+  </div>
+
+  <!-- ADMIN PANEL -->
+  <div id="screen-admin" class="screen" style="justify-content:flex-start; padding-top:3.5rem; overflow-y:auto">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <h2 class="gallery-title">🛡️ Conversations</h2>
+    <div id="admin-conversations" style="width:100%; max-width:640px; display:flex; flex-direction:column; gap:0.75rem; padding-bottom:2rem"></div>
   </div>
 
   <!-- CONFIRM MODAL -->

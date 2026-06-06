@@ -127,3 +127,26 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 @media (max-width: 500px) {
   .chat-photos-row { height: 40dvh; }
 }
+
+/* ADMIN */
+.gallery-title { font-family: 'Black Han Sans', sans-serif; font-size: 1.5rem; color: #fff; margin-bottom: 0.5rem; text-align: center; }
+.error-msg { color: var(--accent) !important; }
+
+.admin-conv-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: border-color 0.2s; }
+.admin-conv-card:hover { border-color: #444; }
+.admin-conv-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; }
+.admin-photos { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+.admin-thumb { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); }
+.admin-code { font-size: 0.7rem; color: var(--muted); }
+.admin-online { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.admin-online.on { background: #9bff9b; }
+.vs-small { font-size: 1.2rem; flex-shrink: 0; }
+.admin-meta { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+.admin-meta .active { color: #9bff9b; font-size: 0.8rem; }
+.admin-meta .ended { color: var(--muted); font-size: 0.8rem; }
+.admin-meta small { color: var(--muted); font-size: 0.7rem; }
+
+.admin-messages { padding: 0.75rem 1rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto; }
+.admin-msg { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.82rem; }
+.admin-msg small { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
+.admin-msg span { color: var(--text); }
