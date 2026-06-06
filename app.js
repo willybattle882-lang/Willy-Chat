@@ -117,10 +117,9 @@ async function uploadPhoto() {
   showScreen('screen-code')
 }
 
-function copyCode() {
+function copyCode(btn) {
   const code = document.getElementById('profile-code-display').textContent
   navigator.clipboard.writeText(code).then(() => {
-    const btn = event.target
     btn.textContent = '✅ Copied!'
     setTimeout(() => btn.textContent = '📋 Copy code', 2000)
   })
@@ -151,6 +150,7 @@ async function enterQueue() {
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
   matchPollInterval = setInterval(async () => {
+    // 1. Check if already in a conversation
     const { data: conv } = await db.from('chat_conversations')
       .select('*')
       .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
@@ -164,6 +164,7 @@ async function enterQueue() {
       return
     }
 
+    // 2. Get first 2 in queue
     const { data: queue } = await db.from('chat_waiting_queue')
       .select('profile_id, joined_at')
       .order('joined_at', { ascending: true })
@@ -173,17 +174,38 @@ async function enterQueue() {
 
     const p1 = queue[0].profile_id
     const p2 = queue[1].profile_id
-    if (myProfile.id !== p1 && myProfile.id !== p2) return
-    if (myProfile.id !== Math.min(p1, p2)) return
 
+    // Only the current user triggers the match, but now ANYONE can trigger
+    if (myProfile.id !== p1 && myProfile.id !== p2) return
+
+    // Check if these two already have an active conversation
+    const { data: existing } = await db
+      .from('chat_conversations')
+      .select('id')
+      .or(`and(profile1_id.eq.${p1},profile2_id.eq.${p2}),and(profile1_id.eq.${p2},profile2_id.eq.${p1})`)
+      .is('ended_at', null)
+      .maybeSingle()
+
+    if (existing) return
+
+    // Create conversation (the unique constraint will prevent duplicate)
     const { data: conv2, error } = await db.from('chat_conversations')
       .insert({ profile1_id: p1, profile2_id: p2 })
-      .select().single()
+      .select()
+      .single()
 
     if (error || !conv2) return
 
+    // Remove both from queue and update profiles
     await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
     await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
+
+    // If this user is one of them, start chat
+    if (p1 === myProfile.id || p2 === myProfile.id) {
+      clearInterval(matchPollInterval)
+      const partnerId = p1 === myProfile.id ? p2 : p1
+      await startChat(conv2, partnerId)
+    }
   }, 2000)
 }
 
@@ -222,7 +244,6 @@ function subscribeToMessages(convId) {
       event: 'INSERT', schema: 'public', table: 'chat_messages',
       filter: `conversation_id=eq.${convId}`
     }, payload => {
-      // Evita duplicar mensagens próprias (já adicionadas no sendMessage)
       if (payload.new.sender_id !== myProfile.id) appendMessage(payload.new)
     })
     .subscribe()
@@ -265,7 +286,6 @@ function watchPartner(partnerId) {
 
       if (!online) {
         document.getElementById('chat-status').textContent = 'Partner disconnected. Finding someone new in 5s...'
-        // Auto-next após 5 segundos
         if (autoNextTimeout) clearTimeout(autoNextTimeout)
         autoNextTimeout = setTimeout(async () => {
           if (currentConversation) {
