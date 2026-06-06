@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Omegle-like Chat | Anônimo por foto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- HOME -->
+  <div id="screen-home" class="screen active">
+    <div class="home-bg"></div>
+    <header><h1 class="logo">PIC<span>MATCH</span></h1><p class="tagline">anonymous · photo chat · 18+</p></header>
+    <div class="home-buttons">
+      <button class="btn-main" onclick="startUpload()">📸 Start with a photo</button>
+      <button class="btn-main secondary" onclick="resumeWithId()">🔗 Resume with ID</button>
+    </div>
+    <div id="online-count" class="total-label"></div>
+    <footer><a href="#" onclick="showPrivacy()">Privacy</a></footer>
+  </div>
+
+  <!-- UPLOAD -->
+  <div id="screen-upload" class="screen">
+    <button class="btn-back" onclick="showHome()">← Back</button>
+    <div class="upload-box">
+      <h2>Send your photo</h2>
+      <p class="sub">Only you will have the secret ID</p>
+      <label class="upload-area">
+        <input type="file" id="file-input" accept="image/*" onchange="previewFile(event)" />
+        <div id="upload-placeholder">📷 Click to choose</div>
+        <img id="preview-img" style="display:none" />
+      </label>
+      <label class="consent-label"><input type="checkbox" id="consent-check" onchange="updateSendBtn()" /> <span>I am 18+ and consent to anonymous chat</span></label>
+      <button class="btn-main" id="btn-send" onclick="uploadPhoto()" disabled>Enter & find partner</button>
+      <p id="upload-status" class="status-msg"></p>
+    </div>
+  </div>
+
+  <!-- WAITING FOR MATCH -->
+  <div id="screen-waiting" class="screen">
+    <div class="loading-spinner"></div>
+    <h2>Looking for someone...</h2>
+    <p class="sub">Waiting for another user to chat</p>
+    <button class="btn-main secondary" onclick="cancelWaiting()">Cancel</button>
+  </div>
+
+  <!-- CHAT -->
+  <div id="screen-chat" class="screen">
+    <button class="btn-back" onclick="exitChat()">← Exit</button>
+    <div class="chat-header">
+      <div class="chat-photo-pair">
+        <div class="chat-myphoto"><img id="my-photo-img" /><span>You</span></div>
+        <div class="vs-icon">💬</div>
+        <div class="chat-partner"><img id="partner-photo-img" /><span id="partner-status">online</span></div>
+      </div>
+      <button class="btn-next" id="next-btn" onclick="nextChat()">⟳ Next</button>
+    </div>
+    <div class="messages-container" id="messages-container">
+      <div class="empty-chat-msg">✨ Start typing...</div>
+    </div>
+    <div class="message-input-area">
+      <input type="text" id="message-input" placeholder="Anonymous message" maxlength="500" />
+      <button id="send-btn" onclick="sendMessage()">Send</button>
+    </div>
+    <p id="chat-status" class="status-msg"></p>
+  </div>
+
+  <!-- PRIVACY -->
+  <div id="screen-privacy" class="screen">...</div>
+
+  <div id="confirm-modal" style="display:none;">...</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
