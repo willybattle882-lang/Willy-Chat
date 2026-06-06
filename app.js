@@ -12,14 +12,12 @@ let matchPollInterval = null
 let confirmResolver = null
 let autoNextTimeout = null
 let isMatching = false
+let isStartingChat = false      // Evita múltiplas inicializações do chat
 
-// ========== Helper: URL com conversão HEIC ==========
+// ========== Helper: URL da imagem (sem transformação) ==========
 function getDisplayUrl(originalUrl) {
   if (!originalUrl) return ''
-  // Se já tiver ?format=jpeg, não adiciona de novo
-  if (originalUrl.includes('format=jpeg')) return originalUrl
-  const separator = originalUrl.includes('?') ? '&' : '?'
-  return `${originalUrl}${separator}format=jpeg`
+  return originalUrl   // Usa URL original – a conversão HEIC será feita pelo navegador se suportado
 }
 
 // ========== HASH ==========
@@ -185,6 +183,9 @@ async function enterQueue() {
     console.log('[enterQueue] Perfil confirmado na fila')
 
     matchPollInterval = setInterval(async () => {
+      // Se já está em chat, não faz nada
+      if (currentConversation || isStartingChat) return
+
       // Verifica se já entrou em conversa
       const { data: conv } = await db.from('chat_conversations')
         .select('*')
@@ -200,7 +201,7 @@ async function enterQueue() {
         return
       }
 
-      // Pega o primeiro da fila (que não seja eu)
+      // Pega os dois primeiros da fila
       const { data: queue } = await db.from('chat_waiting_queue')
         .select('profile_id')
         .order('joined_at', { ascending: true })
@@ -211,21 +212,15 @@ async function enterQueue() {
       let p1 = queue[0].profile_id
       let p2 = queue[1].profile_id
 
-      // Se o primeiro sou eu, tento parear com o segundo
-      if (p1 === myProfile.id) {
-        p1 = myProfile.id
-        p2 = queue[1].profile_id
-      } 
-      // Se o segundo sou eu, uso o primeiro
-      else if (p2 === myProfile.id) {
-        p2 = myProfile.id
-        p1 = queue[0].profile_id
-      } else {
-        // Se eu não estou entre os dois primeiros, não faço nada
-        return
+      // Se eu não estiver entre os dois primeiros, não faço nada
+      if (myProfile.id !== p1 && myProfile.id !== p2) return
+
+      // Garante que myProfile é o primeiro (p1)
+      if (myProfile.id === p2) {
+        [p1, p2] = [p2, p1]
       }
 
-      console.log(`[match] Tentando parear ${p1} com ${p2}`)
+      console.log(`[match] Tentando parear ${p1} (eu) com ${p2}`)
 
       // Verifica se já existe conversa ativa entre eles
       const { data: existing } = await db
@@ -248,7 +243,7 @@ async function enterQueue() {
 
       if (error) {
         console.error('[match] Erro ao criar conversa:', error.message)
-        if (error.code === '23505') { // unique violation
+        if (error.code === '23505') {
           await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
         }
         return
@@ -260,43 +255,57 @@ async function enterQueue() {
       await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
       await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
 
-      // Inicia chat para o usuário atual
-      if (p1 === myProfile.id || p2 === myProfile.id) {
-        clearInterval(matchPollInterval)
-        const partnerId = p1 === myProfile.id ? p2 : p1
-        await startChat(conv2, partnerId)
-        isMatching = false
-      }
+      // Inicia chat
+      clearInterval(matchPollInterval)
+      await startChat(conv2, p2)
+      isMatching = false
     }, 2000)
-  } finally {
-    // Não resetamos isMatching aqui porque o interval pode continuar; só resetamos quando o chat inicia ou dá erro fatal
+  } catch (err) {
+    console.error('[enterQueue] Erro inesperado:', err)
+    isMatching = false
   }
 }
 
 async function startChat(conv, partnerId) {
-  console.log('[startChat] Iniciando chat com partner:', partnerId)
-  const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
-  if (!partner) {
-    console.error('[startChat] Partner não encontrado')
-    enterQueue()
+  if (isStartingChat) {
+    console.log('[startChat] Já iniciando chat, ignorando...')
     return
   }
+  isStartingChat = true
+  try {
+    console.log('[startChat] Iniciando chat com partner:', partnerId)
+    const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
+    if (!partner) {
+      console.error('[startChat] Partner não encontrado')
+      enterQueue()
+      return
+    }
 
-  currentConversation = { id: conv.id, partner_id: partnerId }
+    currentConversation = { id: conv.id, partner_id: partnerId }
 
-  const myPhotoUrl = getDisplayUrl(myProfile.photo_url)
-  const partnerPhotoUrl = getDisplayUrl(partner.photo_url)
+    const myPhotoUrl = getDisplayUrl(myProfile.photo_url)
+    const partnerPhotoUrl = getDisplayUrl(partner.photo_url)
 
-  document.getElementById('my-photo-img').src = myPhotoUrl
-  document.getElementById('partner-photo-img').src = partnerPhotoUrl
-  document.getElementById('partner-status-label').textContent = 'online'
-  document.getElementById('partner-status-label').style.color = '#9bff9b'
-  document.getElementById('chat-status').textContent = ''
+    const myImg = document.getElementById('my-photo-img')
+    const partnerImg = document.getElementById('partner-photo-img')
+    myImg.src = myPhotoUrl
+    partnerImg.src = partnerPhotoUrl
 
-  showScreen('screen-chat')
-  await loadMessages(conv.id)
-  subscribeToMessages(conv.id)
-  watchPartner(partnerId)
+    // Tratamento de erro para imagens
+    myImg.onerror = () => { console.error('Erro ao carregar minha foto:', myPhotoUrl) }
+    partnerImg.onerror = () => { console.error('Erro ao carregar foto do parceiro:', partnerPhotoUrl) }
+
+    document.getElementById('partner-status-label').textContent = 'online'
+    document.getElementById('partner-status-label').style.color = '#9bff9b'
+    document.getElementById('chat-status').textContent = ''
+
+    showScreen('screen-chat')
+    await loadMessages(conv.id)
+    subscribeToMessages(conv.id)
+    watchPartner(partnerId)
+  } finally {
+    isStartingChat = false
+  }
 }
 
 // ========== MENSAGENS ==========
@@ -349,33 +358,40 @@ async function sendMessage() {
   if (!error && data) appendMessage(data)
 }
 
-// ========== PARTNER STATUS ==========
+// ========== PARTNER STATUS (CORRIGIDO) ==========
 function watchPartner(partnerId) {
-  db.channel(`partner-${partnerId}`)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_profiles', filter: `id=eq.${partnerId}` }, payload => {
-      const online = payload.new.online
-      const label = document.getElementById('partner-status-label')
-      label.textContent = online ? 'online' : 'offline'
-      label.style.color = online ? '#9bff9b' : '#888'
+  const channel = db.channel(`partner-${partnerId}`)
+  
+  channel.on('postgres_changes', {
+    event: 'UPDATE',
+    schema: 'public',
+    table: 'chat_profiles',
+    filter: `id=eq.${partnerId}`
+  }, payload => {
+    const online = payload.new.online
+    const label = document.getElementById('partner-status-label')
+    label.textContent = online ? 'online' : 'offline'
+    label.style.color = online ? '#9bff9b' : '#888'
 
-      if (!online) {
-        document.getElementById('chat-status').textContent = 'Partner disconnected. Finding someone new in 5s...'
-        if (autoNextTimeout) clearTimeout(autoNextTimeout)
-        autoNextTimeout = setTimeout(async () => {
-          if (currentConversation) {
-            await db.from('chat_conversations').update({ ended_at: new Date().toISOString() }).eq('id', currentConversation.id)
-          }
-          if (activeChannel) activeChannel.unsubscribe()
-          currentConversation = null
-          document.getElementById('chat-status').textContent = ''
-          enterQueue()
-        }, 5000)
-      } else {
-        if (autoNextTimeout) clearTimeout(autoNextTimeout)
+    if (!online) {
+      document.getElementById('chat-status').textContent = 'Partner disconnected. Finding someone new in 5s...'
+      if (autoNextTimeout) clearTimeout(autoNextTimeout)
+      autoNextTimeout = setTimeout(async () => {
+        if (currentConversation) {
+          await db.from('chat_conversations').update({ ended_at: new Date().toISOString() }).eq('id', currentConversation.id)
+        }
+        if (activeChannel) activeChannel.unsubscribe()
+        currentConversation = null
         document.getElementById('chat-status').textContent = ''
-      }
-    })
-    .subscribe()
+        enterQueue()
+      }, 5000)
+    } else {
+      if (autoNextTimeout) clearTimeout(autoNextTimeout)
+      document.getElementById('chat-status').textContent = ''
+    }
+  })
+  
+  channel.subscribe()
 }
 
 // ========== NEXT ==========
@@ -406,6 +422,7 @@ async function cleanup() {
   }
   currentConversation = null
   isMatching = false
+  isStartingChat = false
 }
 
 async function exitChat() {
