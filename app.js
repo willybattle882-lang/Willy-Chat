@@ -13,15 +13,6 @@ let confirmResolver = null
 let autoNextTimeout = null
 let isMatching = false
 
-// ========== Helper: URL com conversão HEIC ==========
-function getDisplayUrl(originalUrl) {
-  if (!originalUrl) return ''
-  // Se já tiver ?format=jpeg, não adiciona de novo
-  if (originalUrl.includes('format=jpeg')) return originalUrl
-  const separator = originalUrl.includes('?') ? '&' : '?'
-  return `${originalUrl}${separator}format=jpeg`
-}
-
 // ========== HASH ==========
 async function hashPassword(password) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
@@ -284,8 +275,8 @@ async function startChat(conv, partnerId) {
 
   currentConversation = { id: conv.id, partner_id: partnerId }
 
-  const myPhotoUrl = getDisplayUrl(myProfile.photo_url)
-  const partnerPhotoUrl = getDisplayUrl(partner.photo_url)
+  const myPhotoUrl = myProfile.photo_url
+  const partnerPhotoUrl = partner.photo_url
 
   document.getElementById('my-photo-img').src = myPhotoUrl
   document.getElementById('partner-photo-img').src = partnerPhotoUrl
@@ -367,7 +358,6 @@ function watchPartner(partnerId) {
           }
           if (activeChannel) activeChannel.unsubscribe()
           currentConversation = null
-          isMatching = false
           document.getElementById('chat-status').textContent = ''
           enterQueue()
         }, 5000)
@@ -389,7 +379,6 @@ async function nextChat() {
   }
   if (activeChannel) activeChannel.unsubscribe()
   currentConversation = null
-  isMatching = false
   document.getElementById('chat-status').textContent = ''
   enterQueue()
 }
@@ -457,13 +446,13 @@ async function loadAdminPanel() {
     <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
       <div class="admin-conv-header">
         <div class="admin-photos">
-          <img src="${getDisplayUrl(c.p1.photo_url)}" class="admin-thumb" />
+          <img src="${c.p1.photo_url}" class="admin-thumb" />
           <span class="admin-code">#${c.p1.code}</span>
           <span class="admin-online ${c.p1.online ? 'on' : ''}"></span>
         </div>
         <span class="vs-small">💬</span>
         <div class="admin-photos">
-          <img src="${getDisplayUrl(c.p2.photo_url)}" class="admin-thumb" />
+          <img src="${c.p2.photo_url}" class="admin-thumb" />
           <span class="admin-code">#${c.p2.code}</span>
           <span class="admin-online ${c.p2.online ? 'on' : ''}"></span>
         </div>
