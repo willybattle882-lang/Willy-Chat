@@ -594,6 +594,73 @@ function nextBattleRound() {
   loadBattlePair()
 }
 
+
+// ========== GALLERY UPLOAD (visitante anônimo) ==========
+let galleryUploadReturnScreen = 'screen-home'
+
+function showGalleryUpload(returnScreen) {
+  galleryUploadReturnScreen = returnScreen || 'screen-home'
+  document.getElementById('gallery-upload-back').onclick = () => showScreen(galleryUploadReturnScreen)
+  document.getElementById('gallery-file-input').value = ''
+  document.getElementById('gallery-preview-img').style.display = 'none'
+  document.getElementById('gallery-upload-placeholder').style.display = 'flex'
+  document.getElementById('gallery-upload-consent').checked = false
+  document.getElementById('gallery-upload-status').textContent = ''
+  document.getElementById('btn-gallery-send').disabled = true
+  showScreen('screen-gallery-upload')
+}
+
+function previewGalleryFile(event) {
+  const file = event.target.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = e => {
+    document.getElementById('gallery-preview-img').src = e.target.result
+    document.getElementById('gallery-preview-img').style.display = 'block'
+    document.getElementById('gallery-upload-placeholder').style.display = 'none'
+  }
+  reader.readAsDataURL(file)
+  updateGalleryUploadBtn()
+}
+
+function updateGalleryUploadBtn() {
+  const hasFile = document.getElementById('gallery-file-input').files.length > 0
+  const hasConsent = document.getElementById('gallery-upload-consent').checked
+  document.getElementById('btn-gallery-send').disabled = !(hasFile && hasConsent)
+}
+
+async function uploadToGallery() {
+  const file = document.getElementById('gallery-file-input').files[0]
+  if (!file || !document.getElementById('gallery-upload-consent').checked) return
+
+  const status = document.getElementById('gallery-upload-status')
+  const btn = document.getElementById('btn-gallery-send')
+  status.textContent = 'Uploading...'
+  btn.disabled = true
+
+  const ext = file.name.split('.').pop()
+  const fileName = `gallery_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, file)
+  if (uploadErr) { status.textContent = 'Upload failed. Try again.'; btn.disabled = false; return }
+
+  const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
+  const photoUrl = urlData.publicUrl
+
+  const { error: dbErr } = await db.from('gallery_photos').insert({ photo_url: photoUrl, votes: 0 })
+  if (dbErr) { status.textContent = 'Error saving photo. Try again.'; btn.disabled = false; return }
+
+  status.textContent = '✅ Photo added to the Hall of Fame!'
+  setTimeout(() => {
+    if (galleryUploadReturnScreen === 'screen-hall') {
+      loadHallOfFame()
+    } else if (galleryUploadReturnScreen === 'screen-battle') {
+      startGalleryBattle()
+    } else {
+      showScreen(galleryUploadReturnScreen)
+    }
+  }, 1500)
+}
+
 // ========== ADMIN ==========
 function showAdminLogin() {
   document.getElementById('admin-password').value = ''

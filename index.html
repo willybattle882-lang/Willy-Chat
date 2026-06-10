@@ -132,7 +132,10 @@
   <!-- HALL OF FAME -->
   <div id="screen-hall" class="screen hall-screen">
     <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
-    <h2 class="section-title">🏆 Hall of Fame</h2>
+    <div class="hall-header">
+      <h2 class="section-title">🏆 Hall of Fame</h2>
+      <button class="btn-upload-gallery" onclick="showGalleryUpload('screen-hall')">📸 Submit photo</button>
+    </div>
     <div id="hall-grid" class="hall-grid"></div>
   </div>
 
@@ -162,7 +165,10 @@
 
   <!-- GALLERY BATTLE -->
   <div id="screen-battle" class="screen battle-screen">
-    <button class="btn-back" onclick="showScreen('screen-home')">← Home</button>
+    <div class="battle-top-bar">
+      <button class="btn-back-inline" onclick="showScreen('screen-home')">← Home</button>
+      <button class="btn-upload-gallery" onclick="showGalleryUpload('screen-battle')">📸 Submit photo</button>
+    </div>
     <p class="vote-instruction">Which one do you prefer?</p>
     <div class="battle-arena">
       <div class="fighter-wrap">
@@ -186,6 +192,26 @@
       <button class="btn-main" onclick="nextBattleRound()">⚔️ Next battle</button>
       <button class="btn-main secondary" onclick="showScreen('screen-hall')">🏆 Hall of Fame</button>
       <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
+    </div>
+  </div>
+
+  <!-- GALLERY UPLOAD -->
+  <div id="screen-gallery-upload" class="screen">
+    <button class="btn-back" id="gallery-upload-back" onclick="showScreen('screen-home')">← Back</button>
+    <div class="upload-box">
+      <h2>Add to gallery</h2>
+      <p class="sub">Your photo will appear publicly in the Hall of Fame 🏆</p>
+      <label class="upload-area">
+        <input type="file" id="gallery-file-input" accept="image/*" onchange="previewGalleryFile(event)" />
+        <div id="gallery-upload-placeholder"><span class="upload-icon">📷</span><span>Click to choose</span></div>
+        <img id="gallery-preview-img" style="display:none" />
+      </label>
+      <label class="consent-label gallery-consent-wrap">
+        <input type="checkbox" id="gallery-upload-consent" onchange="updateGalleryUploadBtn()" />
+        <span>I am 18+, this photo is mine, and I consent to it being <strong>publicly visible</strong> to anyone on this platform</span>
+      </label>
+      <button class="btn-main" id="btn-gallery-send" onclick="uploadToGallery()" disabled>Add to Hall of Fame</button>
+      <p id="gallery-upload-status" class="status-msg"></p>
     </div>
   </div>
 
