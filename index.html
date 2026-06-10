@@ -20,7 +20,7 @@
     <div class="home-buttons">
       <button class="btn-main" onclick="startUpload()">💬 Chat anonymously</button>
       <button class="btn-main secondary" onclick="startGalleryBattle()">⚔️ Battle</button>
-      <button class="btn-main ghost" onclick="showScreen('screen-hall')">🏆 Hall of Fame</button>
+      <button class="btn-main ghost" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
     </div>
     <div id="online-count" class="total-label"></div>
     <footer class="site-footer">
@@ -141,7 +141,7 @@
 
   <!-- PHOTO DETAIL (curtidas + comentários) -->
   <div id="screen-photo-detail" class="screen photo-detail-screen">
-    <button class="btn-back" onclick="showScreen('screen-hall')">← Back</button>
+    <button class="btn-back" onclick="loadHallOfFame()">← Back</button>
     <div class="photo-detail-wrap">
       <div class="photo-detail-img-wrap">
         <img id="detail-photo-img" />
@@ -190,7 +190,7 @@
     <p id="battle-status" class="status-msg"></p>
     <div class="battle-actions" id="battle-actions" style="display:none">
       <button class="btn-main" onclick="nextBattleRound()">⚔️ Next battle</button>
-      <button class="btn-main secondary" onclick="showScreen('screen-hall')">🏆 Hall of Fame</button>
+      <button class="btn-main secondary" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
       <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
     </div>
   </div>
