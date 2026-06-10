@@ -537,22 +537,24 @@ function loadBattlePair() {
   leftEl.onclick = () => galleryVote('left')
   rightEl.onclick = () => galleryVote('right')
 
+  // Fotos que ainda não foram usadas como oponente
   const available = battlePool.filter(p => !battleSeen.includes(p.id))
-  if (available.length < 2) {
-    document.getElementById('battle-status').textContent = "You've seen all photos!"
-    document.getElementById('battle-actions').style.display = 'flex'
-    return
-  }
 
   if (!battleLeft) {
+    // Primeiro par
+    if (available.length < 2) {
+      document.getElementById('battle-status').textContent = "Not enough photos to battle yet!"
+      document.getElementById('battle-actions').style.display = 'flex'
+      return
+    }
     battleLeft = available[0]
     battleRight = available[1]
     battleSeen.push(battleLeft.id, battleRight.id)
   } else {
-    // Mantém o vencedor, busca novo oponente
-    const newOpponent = available.find(p => p.id !== battleLeft.id && p.id !== battleRight.id)
+    // Vencedor fica, busca novo oponente entre os não vistos (excluindo o próprio vencedor)
+    const newOpponent = available.find(p => p.id !== battleLeft.id)
     if (!newOpponent) {
-      document.getElementById('battle-status').textContent = "You've seen all photos!"
+      document.getElementById('battle-status').textContent = "🏆 Champion! No more challengers."
       document.getElementById('battle-actions').style.display = 'flex'
       return
     }
@@ -583,14 +585,19 @@ async function galleryVote(side) {
   document.getElementById(`battle-count-${winnerSide}`).textContent = `❤️ ${winner.votes} votes`
   document.getElementById(`battle-count-${loserSide}`).textContent = `💀 ${loser.votes || 0} votes`
 
-  // Vencedor continua, perdedor sai
+  // Vencedor fica na esquerda, perdedor sai
   battleLeft = winner
   battleRight = null
 
-  document.getElementById('battle-actions').style.display = 'flex'
+  // Próxima rodada automaticamente após 1.5s
+  setTimeout(() => {
+    battleRight = null
+    loadBattlePair()
+  }, 1500)
 }
 
 function nextBattleRound() {
+  battleRight = null
   loadBattlePair()
 }
 
