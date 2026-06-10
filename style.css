@@ -235,3 +235,22 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   font-family: 'DM Sans', sans-serif; transition: 0.15s;
 }
 .btn-upload-gallery:hover { background: var(--accent2); color: #000; }
+
+/* BATTLE ROUND COUNTER */
+.battle-round-counter { font-size: 0.8rem; color: var(--muted); text-align: center; min-height: 1.2rem; }
+
+/* CHAMPION */
+.champion-photo-wrap { width: 180px; height: 180px; border-radius: var(--radius); overflow: hidden; border: 3px solid #ffd700; background: var(--surface2); box-shadow: 0 0 30px rgba(255,215,0,0.3); }
+.champion-photo-wrap img { width: 100%; height: 100%; object-fit: contain; background: var(--surface2); }
+
+/* PROFILE STATS */
+.profile-stats-photo { width: 120px; height: 120px; border-radius: 50%; overflow: hidden; border: 3px solid var(--accent); background: var(--surface2); }
+.profile-stats-photo img { width: 100%; height: 100%; object-fit: cover; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; width: 100%; }
+.stat-tile { background: var(--surface2); border-radius: var(--radius); padding: 1rem 0.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; border: 1px solid var(--border); }
+.stat-num { font-family: 'Black Han Sans', sans-serif; font-size: 2rem; }
+.stat-num.win { color: var(--accent2); }
+.stat-num.loss { color: var(--accent); }
+.stat-num.votes { color: #ff69b4; }
+.stat-num.champ { color: #ffd700; }
+.stat-label { font-size: 0.75rem; color: var(--muted); text-align: center; }

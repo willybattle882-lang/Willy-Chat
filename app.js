@@ -25,6 +25,8 @@ let battleLeft = null
 let battleRight = null
 let battlePool = []
 let battleSeen = []
+let battleRound = 0
+const BATTLE_MAX_ROUNDS = 10
 
 // ========== APELIDOS ==========
 const ALIASES_ADJ = ['Silent','Dark','Lonely','Wild','Mystic','Brave','Fierce','Bold','Sneaky','Calm','Swift','Lazy','Cunning','Gentle','Sharp']
@@ -171,13 +173,8 @@ async function resumeWithCode() {
   localStorage.setItem('my_chat_code', code)
   await db.from('chat_profiles').update({ online: true }).eq('id', myProfile.id)
 
-  // Se ainda não deu consent pra galeria, pergunta
-  if (!profile.gallery_consent) {
-    document.getElementById('consent-preview-photo').src = profile.photo_url
-    showScreen('screen-gallery-consent')
-  } else {
-    enterQueue()
-  }
+  // Mostra stats do perfil
+  await loadProfileStats(profile)
 }
 
 async function giveGalleryConsent() {
@@ -189,6 +186,39 @@ async function giveGalleryConsent() {
     await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
   }
   enterQueue()
+}
+
+// ========== PROFILE STATS ==========
+async function loadProfileStats(profile) {
+  document.getElementById('stats-photo').src = profile.photo_url
+  
+  // Busca foto na galeria
+  const { data: galleryPhoto } = await db.from('gallery_photos')
+    .select('id, votes, championships')
+    .eq('profile_id', profile.id)
+    .maybeSingle()
+
+  if (galleryPhoto) {
+    // Busca batalhas vencidas e perdidas
+    const { count: wins } = await db.from('gallery_likes')
+      .select('*', { count: 'exact', head: true })
+      .eq('photo_id', galleryPhoto.id)
+
+    document.getElementById('stats-votes').textContent = galleryPhoto.votes || 0
+    document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
+    document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
+  } else {
+    document.getElementById('stats-votes').textContent = '—'
+    document.getElementById('stats-champ').textContent = '—'
+    document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
+  }
+
+  // Wins/losses vêm do battle (gallery_photos.votes é total, championships é o # de vezes campeão)
+  // Como não temos tabela de batalhas por perfil, mostramos votes e championships
+  document.getElementById('stats-wins').textContent = galleryPhoto ? (galleryPhoto.votes || 0) : '—'
+  document.getElementById('stats-losses').textContent = '—'
+
+  showScreen('screen-profile-stats')
 }
 
 // ========== FILA ==========
@@ -520,6 +550,9 @@ async function startGalleryBattle() {
   }
   battlePool = [...photos].sort(() => Math.random() - 0.5)
   battleSeen = []
+  battleRound = 0
+  battleLeft = null
+  battleRight = null
   showScreen('screen-battle')
   loadBattlePair()
 }
@@ -537,11 +570,13 @@ function loadBattlePair() {
   leftEl.onclick = () => galleryVote('left')
   rightEl.onclick = () => galleryVote('right')
 
-  // Fotos que ainda não foram usadas como oponente
+  // Atualiza contador de rodadas
+  const roundEl = document.getElementById('battle-round')
+  if (roundEl) roundEl.textContent = battleLeft ? `Round ${battleRound} / ${BATTLE_MAX_ROUNDS}` : ''
+
   const available = battlePool.filter(p => !battleSeen.includes(p.id))
 
   if (!battleLeft) {
-    // Primeiro par
     if (available.length < 2) {
       document.getElementById('battle-status').textContent = "Not enough photos to battle yet!"
       document.getElementById('battle-actions').style.display = 'flex'
@@ -551,11 +586,14 @@ function loadBattlePair() {
     battleRight = available[1]
     battleSeen.push(battleLeft.id, battleRight.id)
   } else {
-    // Vencedor fica, busca novo oponente entre os não vistos (excluindo o próprio vencedor)
+    // Checagem de campeão após 10 rodadas
+    if (battleRound >= BATTLE_MAX_ROUNDS) {
+      showChampion(battleLeft)
+      return
+    }
     const newOpponent = available.find(p => p.id !== battleLeft.id)
     if (!newOpponent) {
-      document.getElementById('battle-status').textContent = "🏆 Champion! No more challengers."
-      document.getElementById('battle-actions').style.display = 'flex'
+      showChampion(battleLeft)
       return
     }
     battleRight = newOpponent
@@ -564,6 +602,7 @@ function loadBattlePair() {
 
   document.getElementById('battle-img-left').src = battleLeft.photo_url
   document.getElementById('battle-img-right').src = battleRight.photo_url
+  if (roundEl) roundEl.textContent = `Round ${battleRound + 1} / ${BATTLE_MAX_ROUNDS}`
 }
 
 async function galleryVote(side) {
@@ -589,6 +628,7 @@ async function galleryVote(side) {
   battleLeft = winner
   battleRight = null
 
+  battleRound++
   // Próxima rodada automaticamente após 1.5s
   setTimeout(() => {
     battleRight = null
@@ -599,6 +639,17 @@ async function galleryVote(side) {
 function nextBattleRound() {
   battleRight = null
   loadBattlePair()
+}
+
+async function showChampion(photo) {
+  // Registra championship
+  await db.from('gallery_photos')
+    .update({ championships: (photo.championships || 0) + 1 })
+    .eq('id', photo.id)
+
+  document.getElementById('champion-img').src = photo.photo_url
+  document.getElementById('champion-votes').textContent = photo.votes || 0
+  showScreen('screen-champion')
 }
 
 
@@ -748,3 +799,13 @@ window.addEventListener('load', async () => {
 window.addEventListener('beforeunload', () => {
   if (myProfile) db.from('chat_profiles').update({ online: false }).eq('id', myProfile.id)
 })
+
+async function joinHallFromStats() {
+  if (!myProfile) return
+  await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
+  const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
+  if (!existing) {
+    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
+  }
+  await loadProfileStats(myProfile)
+}

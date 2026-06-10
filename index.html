@@ -170,6 +170,7 @@
       <button class="btn-upload-gallery" onclick="showGalleryUpload('screen-battle')">📸 Submit photo</button>
     </div>
     <p class="vote-instruction">Which one do you prefer?</p>
+    <p id="battle-round" class="battle-round-counter"></p>
     <div class="battle-arena">
       <div class="fighter-wrap">
         <div class="battle-frame" id="battle-left" onclick="galleryVote('left')">
@@ -212,6 +213,54 @@
       </label>
       <button class="btn-main" id="btn-gallery-send" onclick="uploadToGallery()" disabled>Add to Hall of Fame</button>
       <p id="gallery-upload-status" class="status-msg"></p>
+    </div>
+  </div>
+
+  <!-- CHAMPION -->
+  <div id="screen-champion" class="screen">
+    <div class="card">
+      <div style="font-size:3rem">🏆</div>
+      <h2>Champion!</h2>
+      <p class="sub">This photo survived all 10 rounds</p>
+      <div class="champion-photo-wrap">
+        <img id="champion-img" />
+      </div>
+      <p class="sub">❤️ <span id="champion-votes">0</span> total votes</p>
+      <button class="btn-main" onclick="startGalleryBattle()">🔄 Start over with new pictures</button>
+      <button class="btn-main secondary" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
+      <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
+    </div>
+  </div>
+
+  <!-- PROFILE STATS -->
+  <div id="screen-profile-stats" class="screen">
+    <button class="btn-back" onclick="showScreen('screen-resume')">← Back</button>
+    <div class="card wide">
+      <div class="profile-stats-photo">
+        <img id="stats-photo" />
+      </div>
+      <h2>Your stats</h2>
+      <div class="stats-grid">
+        <div class="stat-tile">
+          <span id="stats-wins" class="stat-num win">0</span>
+          <span class="stat-label">⚔️ Battles won</span>
+        </div>
+        <div class="stat-tile">
+          <span id="stats-losses" class="stat-num loss">0</span>
+          <span class="stat-label">💀 Battles lost</span>
+        </div>
+        <div class="stat-tile">
+          <span id="stats-votes" class="stat-num votes">0</span>
+          <span class="stat-label">❤️ Total votes</span>
+        </div>
+        <div class="stat-tile">
+          <span id="stats-champ" class="stat-num champ">0</span>
+          <span class="stat-label">🏆 Championships</span>
+        </div>
+      </div>
+      <p id="stats-gallery-note" class="sub"></p>
+      <button class="btn-main" onclick="enterQueue()">💬 Find a partner</button>
+      <button class="btn-main secondary" onclick="showScreen('screen-home')">🏠 Home</button>
     </div>
   </div>
 
