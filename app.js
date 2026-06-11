@@ -746,12 +746,35 @@ async function adminLogin() {
 async function loadAdminPanel() {
   showScreen('screen-admin')
   document.getElementById('admin-conversations').innerHTML = '<p class="status-msg">Loading...</p>'
+
+  // Fotos da galeria
+  const { data: galleryPhotos } = await db.from('gallery_photos')
+    .select('id, photo_url, votes, championships')
+    .order('id', { ascending: false })
+
+  const galleryHtml = galleryPhotos && galleryPhotos.length > 0 ? `
+    <h3 class="admin-section-title">🏆 Gallery Photos</h3>
+    <div class="admin-gallery-grid">
+      ${galleryPhotos.map(p => `
+        <div class="admin-gallery-card">
+          <img src="${p.photo_url}" />
+          <div class="admin-gallery-info">
+            <span>❤️ ${p.votes || 0} wins</span>
+            <span>🏆 ${p.championships || 0} champ</span>
+          </div>
+          <button class="admin-delete-btn" onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)">🗑️ Delete</button>
+        </div>
+      `).join('')}
+    </div>
+    <h3 class="admin-section-title" style="margin-top:1.5rem">💬 Conversations</h3>
+  ` : '<h3 class="admin-section-title">💬 Conversations</h3>'
+
   const { data: convs } = await db.from('chat_conversations')
     .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
     .order('started_at', { ascending: false })
     .limit(50)
-  if (!convs || convs.length === 0) { document.getElementById('admin-conversations').innerHTML = '<p class="status-msg">No conversations yet.</p>'; return }
-  document.getElementById('admin-conversations').innerHTML = convs.map(c => `
+  if (!convs || convs.length === 0) { document.getElementById('admin-conversations').innerHTML = galleryHtml + '<p class="status-msg">No conversations yet.</p>'; return }
+  document.getElementById('admin-conversations').innerHTML = galleryHtml + convs.map(c => `
     <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
       <div class="admin-conv-header">
         <div class="admin-photos"><img src="${c.p1.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p1.code}</span><span class="admin-online ${c.p1.online ? 'on' : ''}"></span></div>
@@ -775,6 +798,29 @@ async function loadAdminConvMessages(convId, card) {
   const { data: msgs } = await db.from('chat_messages').select('content, created_at, sender_id').eq('conversation_id', convId).order('created_at', { ascending: true })
   if (!msgs || msgs.length === 0) { msgDiv.innerHTML = '<p class="status-msg">No messages.</p>'; return }
   msgDiv.innerHTML = msgs.map(m => `<div class="admin-msg"><small>${new Date(m.created_at).toLocaleTimeString()}</small><span>${escapeHtml(m.content)}</span></div>`).join('')
+}
+
+async function adminDeleteGalleryPhoto(id, url, btn) {
+  const confirmed = await showConfirm('Delete this photo from the gallery? This cannot be undone.')
+  if (!confirmed) return
+
+  btn.disabled = true
+  btn.textContent = 'Deleting...'
+
+  // Remove likes e comentários
+  await db.from('gallery_likes').delete().eq('photo_id', id)
+  await db.from('gallery_comments').delete().eq('photo_id', id)
+
+  // Remove da galeria
+  const { error } = await db.from('gallery_photos').delete().eq('id', id)
+  if (error) { btn.textContent = '❌ Error'; return }
+
+  // Remove do storage
+  const fileName = url.split('/PHOTOS/')[1] || url.split('/').pop()
+  await db.storage.from('PHOTOS').remove([fileName])
+
+  // Remove o card da tela
+  btn.closest('.admin-gallery-card').remove()
 }
 
 // ========== ONLINE COUNT ==========

@@ -119,16 +119,40 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 /* HALL OF FAME */
 .hall-screen { justify-content: flex-start; padding-top: 3.5rem; }
 .section-title { font-family: 'Black Han Sans', sans-serif; font-size: 1.5rem; color: #fff; margin-bottom: 1rem; text-align: center; }
-.hall-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; width: 100%; max-width: 640px; overflow-y: auto; max-height: calc(100dvh - 140px); padding-bottom: 1rem; }
-.hall-card { position: relative; cursor: pointer; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: var(--surface2); transition: transform 0.15s; }
+.hall-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 640px;
+  overflow-y: auto;
+  max-height: calc(100dvh - 140px);
+  padding-bottom: 1rem;
+  align-items: start;
+}
+.hall-card {
+  cursor: pointer; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface2);
+  transition: transform 0.15s; display: flex; flex-direction: column;
+}
 .hall-card:hover { transform: scale(1.03); border-color: var(--accent); }
 .hall-card-img {
-  width: 100%; aspect-ratio: 1;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden; background: var(--surface2);
+  width: 100%;
+  padding-top: 100%; /* trick pra aspect-ratio 1:1 sem quebrar no grid */
+  position: relative;
+  background: var(--surface2);
+  flex-shrink: 0;
 }
-.hall-card-img img { width: 100%; height: 100%; object-fit: contain; background: var(--surface2); }
-.hall-card-footer { padding: 0.35rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
+.hall-card-img img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain; background: var(--surface2);
+}
+.hall-card-footer {
+  padding: 0.35rem 0.5rem; display: flex;
+  justify-content: space-between; align-items: center;
+  font-size: 0.75rem; flex-shrink: 0;
+}
 .hall-card-likes { color: var(--accent); font-weight: 600; }
 .hall-card-comments { color: var(--muted); }
 
@@ -254,3 +278,13 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 .stat-num.votes { color: #ff69b4; }
 .stat-num.champ { color: #ffd700; }
 .stat-label { font-size: 0.75rem; color: var(--muted); text-align: center; }
+
+/* ADMIN GALLERY */
+.admin-section-title { font-family: 'Black Han Sans', sans-serif; font-size: 1rem; color: var(--muted); margin-bottom: 0.75rem; letter-spacing: 0.05em; }
+.admin-gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; width: 100%; }
+.admin-gallery-card { background: var(--surface2); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; flex-direction: column; }
+.admin-gallery-card img { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--surface2); }
+.admin-gallery-info { display: flex; justify-content: space-between; padding: 0.3rem 0.5rem; font-size: 0.7rem; color: var(--muted); }
+.admin-delete-btn { width: 100%; background: none; border: none; border-top: 1px solid var(--border); color: var(--accent); font-size: 0.75rem; padding: 0.4rem; cursor: pointer; font-family: inherit; }
+.admin-delete-btn:hover { background: rgba(255,60,60,0.1); }
+.admin-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
