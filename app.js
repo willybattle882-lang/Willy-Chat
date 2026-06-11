@@ -638,11 +638,22 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  // Registra championship com valor explícito
-  const current = photo.championships || 0
-  await db.from('gallery_photos')
+  // Busca valor atual do banco antes de incrementar
+  const { data: fresh } = await db.from('gallery_photos')
+    .select('championships')
+    .eq('id', photo.id)
+    .single()
+  
+  const current = (fresh && fresh.championships) || 0
+  const { error } = await db.from('gallery_photos')
     .update({ championships: current + 1 })
     .eq('id', photo.id)
+  
+  if (error) {
+    console.error('Championship update error:', error)
+  } else {
+    console.log('Championship registered! New total:', current + 1)
+  }
   photo.championships = current + 1
 
   document.getElementById('champion-img').src = photo.photo_url
