@@ -15,11 +15,14 @@ let isMatching = false
 
 // Admin
 let adminToken = null
+let adminActiveTab = 'gallery' // 'gallery' ou 'conversations'
 
 // Hall of Fame
 let currentPhotoId = null
 let myLikedPhotos = JSON.parse(localStorage.getItem('liked_photos') || '[]')
 let replyTargetId = null
+let galleryPhotosList = []        // lista global de fotos da galeria
+let currentPhotoIndex = -1
 
 // Battle
 let battleLeft = null
@@ -136,7 +139,6 @@ async function uploadPhoto() {
   myProfile = profile
   localStorage.setItem('my_chat_code', code)
 
-  // Se deu consent, adiciona na galeria
   if (galleryConsent) {
     await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: photoUrl })
   }
@@ -168,14 +170,12 @@ async function resumeWithCode() {
   localStorage.setItem('my_chat_code', code)
   await db.from('chat_profiles').update({ online: true }).eq('id', myProfile.id)
 
-  // Mostra stats do perfil
   await loadProfileStats(profile)
 }
 
 async function giveGalleryConsent() {
   if (!myProfile) return
   await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
-  // Verifica se já está na galeria
   const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
   if (!existing) {
     await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
@@ -187,7 +187,6 @@ async function giveGalleryConsent() {
 async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
   
-  // Busca foto na galeria
   const { data: galleryPhoto, error: gpError } = await db.from('gallery_photos')
     .select('id, votes, losses, championships')
     .eq('profile_id', profile.id)
@@ -404,21 +403,22 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 async function loadHallOfFame() {
   showScreen('screen-hall')
   const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('votes', { ascending: false })
+  galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
-  if (!photos || photos.length === 0) { grid.innerHTML = '<p style="color:var(--muted);text-align:center;grid-column:1/-1">No photos yet.</p>'; return }
+  if (!galleryPhotosList.length) {
+    grid.innerHTML = '<p style="color:var(--muted);text-align:center;grid-column:1/-1">No photos yet.</p>'
+    return
+  }
 
-  // Busca contagem de likes e comentários
-  const photoIds = photos.map(p => p.id)
+  const photoIds = galleryPhotosList.map(p => p.id)
   const { data: likes } = await db.from('gallery_likes').select('photo_id')
   const { data: comments } = await db.from('gallery_comments').select('photo_id').is('reply_to', null)
-
-  const likeMap = {}
-  const commentMap = {}
+  const likeMap = {}, commentMap = {}
   ;(likes || []).forEach(l => { likeMap[l.photo_id] = (likeMap[l.photo_id] || 0) + 1 })
   ;(comments || []).forEach(c => { commentMap[c.photo_id] = (commentMap[c.photo_id] || 0) + 1 })
 
-  grid.innerHTML = photos.map(p => `
-    <div class="hall-card" onclick="openPhotoDetail(${p.id}, '${p.photo_url}')">
+  grid.innerHTML = galleryPhotosList.map((p, idx) => `
+    <div class="hall-card" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
       <div class="hall-card-img"><img src="${p.photo_url}" loading="lazy" /></div>
       <div class="hall-card-footer">
         <span class="hall-card-likes">❤️ ${likeMap[p.id] || 0}</span>
@@ -428,21 +428,40 @@ async function loadHallOfFame() {
   `).join('')
 }
 
-async function openPhotoDetail(photoId, photoUrl) {
+async function openPhotoDetail(photoId, photoUrl, index) {
   currentPhotoId = photoId
+  currentPhotoIndex = (index !== undefined) ? index : galleryPhotosList.findIndex(p => p.id === photoId)
   document.getElementById('detail-photo-img').src = photoUrl
   showScreen('screen-photo-detail')
   await loadPhotoDetail(photoId)
+  updateNavButtons()
+}
+
+function updateNavButtons() {
+  const prevBtn = document.getElementById('detail-prev-btn')
+  const nextBtn = document.getElementById('detail-next-btn')
+  if (prevBtn && nextBtn) {
+    prevBtn.style.display = currentPhotoIndex > 0 ? 'block' : 'none'
+    nextBtn.style.display = currentPhotoIndex < galleryPhotosList.length - 1 ? 'block' : 'none'
+  }
+}
+
+async function navigatePhoto(direction) {
+  let newIndex = currentPhotoIndex + direction
+  if (newIndex < 0 || newIndex >= galleryPhotosList.length) return
+  currentPhotoIndex = newIndex
+  const photo = galleryPhotosList[currentPhotoIndex]
+  currentPhotoId = photo.id
+  document.getElementById('detail-photo-img').src = photo.photo_url
+  await loadPhotoDetail(photo.id)
+  updateNavButtons()
 }
 
 async function loadPhotoDetail(photoId) {
-  // Likes
   const { count: likeCount } = await db.from('gallery_likes').select('*', { count: 'exact', head: true }).eq('photo_id', photoId)
   document.getElementById('detail-likes-count').textContent = likeCount || 0
   const liked = myLikedPhotos.includes(photoId)
   document.getElementById('detail-like-btn').className = `like-btn ${liked ? 'liked' : ''}`
-
-  // Comentários
   await loadComments(photoId)
 }
 
@@ -558,7 +577,6 @@ function loadBattlePair() {
   leftEl.onclick = () => galleryVote('left')
   rightEl.onclick = () => galleryVote('right')
 
-  // Atualiza contador de rodadas
   const roundEl = document.getElementById('battle-round')
   if (roundEl) roundEl.textContent = battleLeft ? `Round ${battleRound} / ${BATTLE_MAX_ROUNDS}` : ''
 
@@ -574,15 +592,12 @@ function loadBattlePair() {
     battleRight = battlePool[1]
     battleSeen.push(battleLeft.id, battleRight.id)
   } else {
-    // Campeão após 10 rodadas
     if (battleRound >= BATTLE_MAX_ROUNDS) {
       showChampion(battleLeft)
       return
     }
-    // Se acabaram os oponentes, reinicia o pool sem o campeão atual
     let pool = available.filter(p => p.id !== battleLeft.id)
     if (pool.length === 0) {
-      // Reinicia seen, mantendo só o campeão como visto
       battleSeen = [battleLeft.id]
       pool = battlePool.filter(p => p.id !== battleLeft.id).sort(() => Math.random() - 0.5)
     }
@@ -603,7 +618,6 @@ async function galleryVote(side) {
   document.getElementById('battle-left').onclick = null
   document.getElementById('battle-right').onclick = null
 
-  // Atualiza votos via API
   await fetch('/api/gallery-vote', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -619,12 +633,10 @@ async function galleryVote(side) {
   document.getElementById(`battle-count-${winnerSide}`).textContent = `❤️ ${winner.votes} votes`
   document.getElementById(`battle-count-${loserSide}`).textContent = `💀 ${loser.votes || 0} votes`
 
-  // Vencedor fica na esquerda, perdedor sai
   battleLeft = winner
   battleRight = null
 
   battleRound++
-  // Próxima rodada automaticamente após 1.5s
   setTimeout(() => {
     battleRight = null
     loadBattlePair()
@@ -637,7 +649,6 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  // Registra championship via API
   const res = await fetch('/api/gallery-championship', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -651,8 +662,7 @@ async function showChampion(photo) {
   showScreen('screen-champion')
 }
 
-
-// ========== GALLERY UPLOAD (visitante anônimo) ==========
+// ========== GALLERY UPLOAD ==========
 let galleryUploadReturnScreen = 'screen-home'
 
 function showGalleryUpload(returnScreen) {
@@ -758,93 +768,89 @@ async function adminLogin() {
 
 async function loadAdminPanel() {
   showScreen('screen-admin')
-
   const container = document.getElementById('admin-conversations')
-  container.innerHTML = '<p class="status-msg">Loading...</p>'
+  
+  // Cria estrutura de abas se não existir
+  if (!document.getElementById('admin-tabs')) {
+    const tabsHtml = `
+      <div id="admin-tabs" style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+        <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery Photos</button>
+        <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Conversations</button>
+      </div>
+      <div id="admin-gallery-section"></div>
+      <div id="admin-conv-section"></div>
+    `
+    container.innerHTML = tabsHtml
+    document.getElementById('admin-tab-gallery').onclick = () => switchAdminTab('gallery')
+    document.getElementById('admin-tab-conv').onclick = () => switchAdminTab('conversations')
+  }
+  await switchAdminTab(adminActiveTab)
+}
 
-  // ===== GALERIA =====
-  const { data: galleryPhotos } = await db
-    .from('gallery_photos')
-    .select('id, photo_url, votes, championships')
-    .order('id', { ascending: false })
-
-  let gallerySection = `
-    <h3 class="admin-section-title">🏆 Gallery Photos</h3>
-  `
-
-  if (galleryPhotos?.length) {
-    gallerySection += `
+async function switchAdminTab(tab) {
+  adminActiveTab = tab
+  const galleryDiv = document.getElementById('admin-gallery-section')
+  const convDiv = document.getElementById('admin-conv-section')
+  const btnGallery = document.getElementById('admin-tab-gallery')
+  const btnConv = document.getElementById('admin-tab-conv')
+  
+  if (tab === 'gallery') {
+    galleryDiv.style.display = 'block'
+    convDiv.style.display = 'none'
+    btnGallery.style.background = 'var(--accent)'
+    btnConv.style.background = ''
+    galleryDiv.innerHTML = '<p class="status-msg">Loading gallery...</p>'
+    const { data: galleryPhotos } = await db.from('gallery_photos')
+      .select('id, photo_url, votes, championships')
+      .order('id', { ascending: false })
+    if (!galleryPhotos || galleryPhotos.length === 0) {
+      galleryDiv.innerHTML = '<p class="status-msg">No photos in gallery.</p>'
+      return
+    }
+    galleryDiv.innerHTML = `
+      <h3 class="admin-section-title">🏆 Gallery Photos</h3>
       <div class="admin-gallery-grid">
         ${galleryPhotos.map(p => `
-          <div class="admin-gallery-card">
+          <div class="admin-gallery-card" data-id="${p.id}">
             <img src="${p.photo_url}" />
-
             <div class="admin-gallery-info">
-              <span>❤️ ${p.votes || 0}</span>
-              <span>🏆 ${p.championships || 0}</span>
+              <span>❤️ ${p.votes || 0} wins</span>
+              <span>🏆 ${p.championships || 0} champ</span>
             </div>
-
-            <button
-              class="admin-delete-btn"
-              onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)"
-            >
-              🗑 Delete
-            </button>
+            <button class="admin-delete-btn" onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)">🗑️ Delete</button>
           </div>
         `).join('')}
       </div>
     `
   } else {
-    gallerySection += `<p class="status-msg">No gallery photos.</p>`
-  }
-
-  // ===== CONVERSAS =====
-  const { data: convs } = await db
-    .from('chat_conversations')
-    .select(`
-      *,
-      p1:chat_profiles!profile1_id(photo_url, code, online),
-      p2:chat_profiles!profile2_id(photo_url, code, online)
-    `)
-    .order('started_at', { ascending: false })
-    .limit(50)
-
-  let convSection = `
-    <h3 class="admin-section-title">💬 Conversations</h3>
-  `
-
-  if (!convs?.length) {
-    convSection += `<p class="status-msg">No conversations yet.</p>`
-  } else {
-    convSection += convs.map(c => `
-      <div class="admin-conv-card"
-           onclick="loadAdminConvMessages(${c.id}, this)">
-
+    galleryDiv.style.display = 'none'
+    convDiv.style.display = 'block'
+    btnConv.style.background = 'var(--accent)'
+    btnGallery.style.background = ''
+    convDiv.innerHTML = '<p class="status-msg">Loading conversations...</p>'
+    const { data: convs } = await db.from('chat_conversations')
+      .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
+      .order('started_at', { ascending: false })
+      .limit(50)
+    if (!convs || convs.length === 0) {
+      convDiv.innerHTML = '<p class="status-msg">No conversations yet.</p>'
+      return
+    }
+    convDiv.innerHTML = convs.map(c => `
+      <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
         <div class="admin-conv-header">
-
-          <div class="admin-photos">
-            <img src="${c.p1.photo_url}" class="admin-thumb" />
-            <span class="admin-code">#${c.p1.code}</span>
-          </div>
-
+          <div class="admin-photos"><img src="${c.p1.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p1.code}</span><span class="admin-online ${c.p1.online ? 'on' : ''}"></span></div>
           <span class="vs-small">💬</span>
-
-          <div class="admin-photos">
-            <img src="${c.p2.photo_url}" class="admin-thumb" />
-            <span class="admin-code">#${c.p2.code}</span>
+          <div class="admin-photos"><img src="${c.p2.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p2.code}</span><span class="admin-online ${c.p2.online ? 'on' : ''}"></span></div>
+          <div class="admin-meta">
+            <span class="${c.ended_at ? 'ended' : 'active'}">${c.ended_at ? '⚫ Ended' : '🟢 Active'}</span>
+            <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' })}</small>
           </div>
-
         </div>
-
-        <div id="admin-msgs-${c.id}"
-             class="admin-messages"
-             style="display:none"></div>
-
+        <div class="admin-messages" id="admin-msgs-${c.id}" style="display:none"></div>
       </div>
     `).join('')
   }
-
-  container.innerHTML = gallerySection + convSection
 }
 
 async function loadAdminConvMessages(convId, card) {
@@ -906,7 +912,6 @@ window.addEventListener('load', async () => {
       localStorage.removeItem('my_chat_code')
     }
   }
-  // Restaurar token admin se existir
   const savedToken = sessionStorage.getItem('admin_token')
   if (savedToken) adminToken = savedToken
 
