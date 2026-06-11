@@ -59,7 +59,6 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 .upload-box h2 { font-family: 'Black Han Sans', sans-serif; font-size: 1.8rem; color: #fff; }
 .sub { color: var(--muted); font-size: 0.875rem; }
 
-/* FOTO QUADRADA COM FIT COMPLETO */
 .upload-area {
   width: 100%; max-width: 220px; aspect-ratio: 1;
   border: 2px dashed var(--border); border-radius: var(--radius);
@@ -73,7 +72,7 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 #preview-img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
-  object-fit: contain; /* fit completo, sem crop */
+  object-fit: contain;
   background: var(--surface2);
 }
 
@@ -131,27 +130,42 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   align-items: start;
 }
 .hall-card {
-  cursor: pointer; border-radius: 10px; overflow: hidden;
-  border: 1px solid var(--border); background: var(--surface2);
-  transition: transform 0.15s; display: flex; flex-direction: column;
+  cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  transition: transform 0.15s;
+  display: flex;
+  flex-direction: column;
+  height: auto;
 }
 .hall-card:hover { transform: scale(1.03); border-color: var(--accent); }
 .hall-card-img {
   width: 100%;
-  padding-top: 100%; /* trick pra aspect-ratio 1:1 sem quebrar no grid */
+  aspect-ratio: 1 / 1;
   position: relative;
   background: var(--surface2);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .hall-card-img img {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  object-fit: contain; background: var(--surface2);
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--surface2);
 }
 .hall-card-footer {
-  padding: 0.35rem 0.5rem; display: flex;
-  justify-content: space-between; align-items: center;
-  font-size: 0.75rem; flex-shrink: 0;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 .hall-card-likes { color: var(--accent); font-weight: 600; }
 .hall-card-comments { color: var(--muted); }
@@ -170,7 +184,15 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 .like-btn { background: none; border: 1.5px solid var(--border); border-radius: 40px; padding: 0.4rem 1rem; color: var(--text); cursor: pointer; font-size: 0.9rem; font-family: inherit; transition: 0.15s; }
 .like-btn:hover { border-color: var(--accent); color: var(--accent); }
 .like-btn.liked { background: var(--accent); border-color: var(--accent); color: #fff; }
-
+.photo-detail-nav {
+  width: 100%;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.photo-detail-nav button {
+  flex: 1;
+}
 .comments-section { display: flex; flex-direction: column; gap: 0.75rem; }
 .comments-section h3 { font-family: 'Black Han Sans', sans-serif; font-size: 1rem; color: var(--muted); }
 .comments-list { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -242,6 +264,14 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 .admin-msg { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.82rem; }
 .admin-msg small { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
 .admin-msg span { color: var(--text); }
+.admin-section-title { font-family: 'Black Han Sans', sans-serif; font-size: 1rem; color: var(--muted); margin-bottom: 0.75rem; letter-spacing: 0.05em; }
+.admin-gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; width: 100%; }
+.admin-gallery-card { background: var(--surface2); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; flex-direction: column; }
+.admin-gallery-card img { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--surface2); }
+.admin-gallery-info { display: flex; justify-content: space-between; padding: 0.3rem 0.5rem; font-size: 0.7rem; color: var(--muted); }
+.admin-delete-btn { width: 100%; background: none; border: none; border-top: 1px solid var(--border); color: var(--accent); font-size: 0.75rem; padding: 0.4rem; cursor: pointer; font-family: inherit; }
+.admin-delete-btn:hover { background: rgba(255,60,60,0.1); }
+.admin-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 500px) {
   .chat-photos-row { height: 38dvh; }
@@ -278,13 +308,3 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 .stat-num.votes { color: #ff69b4; }
 .stat-num.champ { color: #ffd700; }
 .stat-label { font-size: 0.75rem; color: var(--muted); text-align: center; }
-
-/* ADMIN GALLERY */
-.admin-section-title { font-family: 'Black Han Sans', sans-serif; font-size: 1rem; color: var(--muted); margin-bottom: 0.75rem; letter-spacing: 0.05em; }
-.admin-gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; width: 100%; }
-.admin-gallery-card { background: var(--surface2); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); display: flex; flex-direction: column; }
-.admin-gallery-card img { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--surface2); }
-.admin-gallery-info { display: flex; justify-content: space-between; padding: 0.3rem 0.5rem; font-size: 0.7rem; color: var(--muted); }
-.admin-delete-btn { width: 100%; background: none; border: none; border-top: 1px solid var(--border); color: var(--accent); font-size: 0.75rem; padding: 0.4rem; cursor: pointer; font-family: inherit; }
-.admin-delete-btn:hover { background: rgba(255,60,60,0.1); }
-.admin-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
