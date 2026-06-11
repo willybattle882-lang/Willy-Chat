@@ -577,26 +577,28 @@ function loadBattlePair() {
   const available = battlePool.filter(p => !battleSeen.includes(p.id))
 
   if (!battleLeft) {
-    if (available.length < 2) {
+    if (battlePool.length < 2) {
       document.getElementById('battle-status').textContent = "Not enough photos to battle yet!"
       document.getElementById('battle-actions').style.display = 'flex'
       return
     }
-    battleLeft = available[0]
-    battleRight = available[1]
+    battleLeft = battlePool[0]
+    battleRight = battlePool[1]
     battleSeen.push(battleLeft.id, battleRight.id)
   } else {
-    // Checagem de campeão após 10 rodadas
+    // Campeão após 10 rodadas
     if (battleRound >= BATTLE_MAX_ROUNDS) {
       showChampion(battleLeft)
       return
     }
-    const newOpponent = available.find(p => p.id !== battleLeft.id)
-    if (!newOpponent) {
-      showChampion(battleLeft)
-      return
+    // Se acabaram os oponentes, reinicia o pool sem o campeão atual
+    let pool = available.filter(p => p.id !== battleLeft.id)
+    if (pool.length === 0) {
+      // Reinicia seen, mantendo só o campeão como visto
+      battleSeen = [battleLeft.id]
+      pool = battlePool.filter(p => p.id !== battleLeft.id).sort(() => Math.random() - 0.5)
     }
-    battleRight = newOpponent
+    battleRight = pool[0]
     battleSeen.push(battleRight.id)
   }
 
@@ -642,10 +644,12 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  // Registra championship
+  // Registra championship com valor explícito
+  const current = photo.championships || 0
   await db.from('gallery_photos')
-    .update({ championships: (photo.championships || 0) + 1 })
+    .update({ championships: current + 1 })
     .eq('id', photo.id)
+  photo.championships = current + 1
 
   document.getElementById('champion-img').src = photo.photo_url
   document.getElementById('champion-votes').textContent = photo.votes || 0
