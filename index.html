@@ -79,7 +79,7 @@
     </div>
   </div>
 
-  <!-- GALLERY CONSENT (para usuários retornando) -->
+  <!-- GALLERY CONSENT -->
   <div id="screen-gallery-consent" class="screen">
     <button class="btn-back" onclick="enterQueue()">← Skip</button>
     <div class="card">
@@ -139,12 +139,16 @@
     <div id="hall-grid" class="hall-grid"></div>
   </div>
 
-  <!-- PHOTO DETAIL (curtidas + comentários) -->
+  <!-- PHOTO DETAIL -->
   <div id="screen-photo-detail" class="screen photo-detail-screen">
     <button class="btn-back" onclick="loadHallOfFame()">← Back</button>
     <div class="photo-detail-wrap">
       <div class="photo-detail-img-wrap">
         <img id="detail-photo-img" />
+      </div>
+      <div class="photo-detail-nav">
+        <button id="detail-prev-btn" class="btn-next" style="display: none;" onclick="navigatePhoto(-1)">◀ Previous</button>
+        <button id="detail-next-btn" class="btn-next" style="display: none;" onclick="navigatePhoto(1)">Next ▶</button>
       </div>
       <div class="photo-detail-info">
         <div class="detail-likes-row">
@@ -292,7 +296,7 @@
   <!-- ADMIN PANEL -->
   <div id="screen-admin" class="screen" style="justify-content:flex-start; padding-top:3.5rem; overflow-y:auto">
     <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
-    <h2 class="section-title">🛡️ Conversations</h2>
+    <h2 class="section-title">🛡️ Admin Panel</h2>
     <div id="admin-conversations" style="width:100%; max-width:640px; display:flex; flex-direction:column; gap:0.75rem; padding-bottom:2rem"></div>
   </div>
 
