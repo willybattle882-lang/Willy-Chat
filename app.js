@@ -758,49 +758,93 @@ async function adminLogin() {
 
 async function loadAdminPanel() {
   showScreen('screen-admin')
-  document.getElementById('admin-conversations').innerHTML = '<p class="status-msg">Loading...</p>'
 
-  // Fotos da galeria
-  const { data: galleryPhotos } = await db.from('gallery_photos')
+  const container = document.getElementById('admin-conversations')
+  container.innerHTML = '<p class="status-msg">Loading...</p>'
+
+  // ===== GALERIA =====
+  const { data: galleryPhotos } = await db
+    .from('gallery_photos')
     .select('id, photo_url, votes, championships')
     .order('id', { ascending: false })
 
-  const galleryHtml = galleryPhotos && galleryPhotos.length > 0 ? `
+  let gallerySection = `
     <h3 class="admin-section-title">🏆 Gallery Photos</h3>
-    <div class="admin-gallery-grid">
-      ${galleryPhotos.map(p => `
-        <div class="admin-gallery-card">
-          <img src="${p.photo_url}" />
-          <div class="admin-gallery-info">
-            <span>❤️ ${p.votes || 0} wins</span>
-            <span>🏆 ${p.championships || 0} champ</span>
-          </div>
-          <button class="admin-delete-btn" onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)">🗑️ Delete</button>
-        </div>
-      `).join('')}
-    </div>
-    <h3 class="admin-section-title" style="margin-top:1.5rem">💬 Conversations</h3>
-  ` : '<h3 class="admin-section-title">💬 Conversations</h3>'
+  `
 
-  const { data: convs } = await db.from('chat_conversations')
-    .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
+  if (galleryPhotos?.length) {
+    gallerySection += `
+      <div class="admin-gallery-grid">
+        ${galleryPhotos.map(p => `
+          <div class="admin-gallery-card">
+            <img src="${p.photo_url}" />
+
+            <div class="admin-gallery-info">
+              <span>❤️ ${p.votes || 0}</span>
+              <span>🏆 ${p.championships || 0}</span>
+            </div>
+
+            <button
+              class="admin-delete-btn"
+              onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)"
+            >
+              🗑 Delete
+            </button>
+          </div>
+        `).join('')}
+      </div>
+    `
+  } else {
+    gallerySection += `<p class="status-msg">No gallery photos.</p>`
+  }
+
+  // ===== CONVERSAS =====
+  const { data: convs } = await db
+    .from('chat_conversations')
+    .select(`
+      *,
+      p1:chat_profiles!profile1_id(photo_url, code, online),
+      p2:chat_profiles!profile2_id(photo_url, code, online)
+    `)
     .order('started_at', { ascending: false })
     .limit(50)
-  if (!convs || convs.length === 0) { document.getElementById('admin-conversations').innerHTML = galleryHtml + '<p class="status-msg">No conversations yet.</p>'; return }
-  document.getElementById('admin-conversations').innerHTML = galleryHtml + convs.map(c => `
-    <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
-      <div class="admin-conv-header">
-        <div class="admin-photos"><img src="${c.p1.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p1.code}</span><span class="admin-online ${c.p1.online ? 'on' : ''}"></span></div>
-        <span class="vs-small">💬</span>
-        <div class="admin-photos"><img src="${c.p2.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p2.code}</span><span class="admin-online ${c.p2.online ? 'on' : ''}"></span></div>
-        <div class="admin-meta">
-          <span class="${c.ended_at ? 'ended' : 'active'}">${c.ended_at ? '⚫ Ended' : '🟢 Active'}</span>
-          <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
+
+  let convSection = `
+    <h3 class="admin-section-title">💬 Conversations</h3>
+  `
+
+  if (!convs?.length) {
+    convSection += `<p class="status-msg">No conversations yet.</p>`
+  } else {
+    convSection += convs.map(c => `
+      <div class="admin-conv-card"
+           onclick="loadAdminConvMessages(${c.id}, this)">
+
+        <div class="admin-conv-header">
+
+          <div class="admin-photos">
+            <img src="${c.p1.photo_url}" class="admin-thumb" />
+            <span class="admin-code">#${c.p1.code}</span>
+          </div>
+
+          <span class="vs-small">💬</span>
+
+          <div class="admin-photos">
+            <img src="${c.p2.photo_url}" class="admin-thumb" />
+            <span class="admin-code">#${c.p2.code}</span>
+          </div>
+
         </div>
+
+        <div id="admin-msgs-${c.id}"
+             class="admin-messages"
+             style="display:none"></div>
+
       </div>
-      <div class="admin-messages" id="admin-msgs-${c.id}" style="display:none"></div>
-    </div>
-  `).join('')
+    `).join('')
+  }
+
+  container.innerHTML = gallerySection + convSection
 }
 
 async function loadAdminConvMessages(convId, card) {
