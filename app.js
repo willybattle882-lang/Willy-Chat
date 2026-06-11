@@ -193,10 +193,12 @@ async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
   
   // Busca foto na galeria
-  const { data: galleryPhoto } = await db.from('gallery_photos')
+  const { data: galleryPhoto, error: gpError } = await db.from('gallery_photos')
     .select('id, votes, losses, championships')
     .eq('profile_id', profile.id)
     .maybeSingle()
+  
+  console.log('[stats] profile.id:', profile.id, 'galleryPhoto:', galleryPhoto, 'error:', gpError)
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
