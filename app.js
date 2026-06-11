@@ -1,7 +1,5 @@
 const SUPABASE_URL = 'https://ozyligilnzuhnkkobgxc.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eWxpZ2lsbnp1aG5ra29iZ3hjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2ODkyNjMsImV4cCI6MjA5NjI2NTI2M30.H64U-LWB_arJkS_73sMVF-1myh3VhnFnyVCtFjlEDUg'
-const ADMIN_HASH = 'd5764cde6afed69a3f868d9341685ca39cfd57ab0c7d7d6f7ed60be03c705255'
-
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_ANON)
 
@@ -14,6 +12,9 @@ let convPollInterval = null
 let confirmResolver = null
 let autoNextTimeout = null
 let isMatching = false
+
+// Admin
+let adminToken = null
 
 // Hall of Fame
 let currentPhotoId = null
@@ -35,12 +36,6 @@ function randomAlias() {
   const adj = ALIASES_ADJ[Math.floor(Math.random() * ALIASES_ADJ.length)]
   const noun = ALIASES_NOUN[Math.floor(Math.random() * ALIASES_NOUN.length)]
   return `${adj} ${noun}`
-}
-
-// ========== HASH ==========
-async function hashPassword(password) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 // ========== MODAL ==========
@@ -608,9 +603,12 @@ async function galleryVote(side) {
   document.getElementById('battle-left').onclick = null
   document.getElementById('battle-right').onclick = null
 
-  // Atualiza votos do vencedor e derrota do perdedor
-  await db.from('gallery_photos').update({ votes: (winner.votes || 0) + 1 }).eq('id', winner.id)
-  await db.from('gallery_photos').update({ losses: (loser.losses || 0) + 1 }).eq('id', loser.id)
+  // Atualiza votos via API
+  await fetch('/api/gallery-vote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ winnerId: winner.id, loserId: loser.id })
+  })
   winner.votes = (winner.votes || 0) + 1
   loser.losses = (loser.losses || 0) + 1
 
@@ -639,23 +637,14 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  // Busca valor atual do banco antes de incrementar
-  const { data: fresh } = await db.from('gallery_photos')
-    .select('championships')
-    .eq('id', photo.id)
-    .single()
-  
-  const current = (fresh && fresh.championships) || 0
-  const { error } = await db.from('gallery_photos')
-    .update({ championships: current + 1 })
-    .eq('id', photo.id)
-  
-  if (error) {
-    console.error('Championship update error:', error)
-  } else {
-    console.log('Championship registered! New total:', current + 1)
-  }
-  photo.championships = current + 1
+  // Registra championship via API
+  const res = await fetch('/api/gallery-championship', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId: photo.id })
+  })
+  const data = await res.json()
+  photo.championships = data.championships || (photo.championships || 0) + 1
 
   document.getElementById('champion-img').src = photo.photo_url
   document.getElementById('champion-votes').textContent = photo.votes || 0
@@ -738,9 +727,33 @@ function showAdminLogin() {
 
 async function adminLogin() {
   const password = document.getElementById('admin-password').value
-  const hash = await hashPassword(password)
-  if (hash !== ADMIN_HASH) { document.getElementById('admin-login-error').textContent = 'Wrong password.'; return }
-  loadAdminPanel()
+  if (!password) return
+
+  const btn = document.querySelector('#screen-admin-login .btn-main')
+  btn.disabled = true
+  btn.textContent = 'Verifying...'
+
+  try {
+    const res = await fetch('/api/admin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      document.getElementById('admin-login-error').textContent = 'Wrong password.'
+      btn.disabled = false
+      btn.textContent = 'Enter'
+      return
+    }
+    adminToken = data.token
+    sessionStorage.setItem('admin_token', adminToken)
+    loadAdminPanel()
+  } catch (e) {
+    document.getElementById('admin-login-error').textContent = 'Error connecting. Try again.'
+    btn.disabled = false
+    btn.textContent = 'Enter'
+  }
 }
 
 async function loadAdminPanel() {
@@ -807,20 +820,21 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
   btn.disabled = true
   btn.textContent = 'Deleting...'
 
-  // Remove likes e comentários
-  await db.from('gallery_likes').delete().eq('photo_id', id)
-  await db.from('gallery_comments').delete().eq('photo_id', id)
+  const token = adminToken || sessionStorage.getItem('admin_token')
+  if (!token) { btn.textContent = '❌ Not authenticated'; return }
 
-  // Remove da galeria
-  const { error } = await db.from('gallery_photos').delete().eq('id', id)
-  if (error) { btn.textContent = '❌ Error'; return }
-
-  // Remove do storage
-  const fileName = url.split('/PHOTOS/')[1] || url.split('/').pop()
-  await db.storage.from('PHOTOS').remove([fileName])
-
-  // Remove o card da tela
-  btn.closest('.admin-gallery-card').remove()
+  try {
+    const res = await fetch('/api/admin-delete-gallery', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+      body: JSON.stringify({ photoId: id, photoUrl: url })
+    })
+    if (!res.ok) { btn.textContent = '❌ Error'; btn.disabled = false; return }
+    btn.closest('.admin-gallery-card').remove()
+  } catch (e) {
+    btn.textContent = '❌ Error'
+    btn.disabled = false
+  }
 }
 
 // ========== ONLINE COUNT ==========
@@ -848,6 +862,10 @@ window.addEventListener('load', async () => {
       localStorage.removeItem('my_chat_code')
     }
   }
+  // Restaurar token admin se existir
+  const savedToken = sessionStorage.getItem('admin_token')
+  if (savedToken) adminToken = savedToken
+
   showHome()
   refreshOnlineCount()
 })
