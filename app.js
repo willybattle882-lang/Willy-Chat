@@ -198,7 +198,6 @@ async function loadProfileStats(profile) {
     .eq('profile_id', profile.id)
     .maybeSingle()
   
-  console.log('[stats] profile.id:', profile.id, 'galleryPhoto:', galleryPhoto, 'error:', gpError)
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
