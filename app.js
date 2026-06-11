@@ -194,29 +194,21 @@ async function loadProfileStats(profile) {
   
   // Busca foto na galeria
   const { data: galleryPhoto } = await db.from('gallery_photos')
-    .select('id, votes, championships')
+    .select('id, votes, losses, championships')
     .eq('profile_id', profile.id)
     .maybeSingle()
 
   if (galleryPhoto) {
-    // Busca batalhas vencidas e perdidas
-    const { count: wins } = await db.from('gallery_likes')
-      .select('*', { count: 'exact', head: true })
-      .eq('photo_id', galleryPhoto.id)
-
-    document.getElementById('stats-votes').textContent = galleryPhoto.votes || 0
+    document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
+    document.getElementById('stats-losses').textContent = galleryPhoto.losses || 0
     document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
     document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
   } else {
-    document.getElementById('stats-votes').textContent = '—'
+    document.getElementById('stats-wins').textContent = '—'
+    document.getElementById('stats-losses').textContent = '—'
     document.getElementById('stats-champ').textContent = '—'
     document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
   }
-
-  // Wins/losses vêm do battle (gallery_photos.votes é total, championships é o # de vezes campeão)
-  // Como não temos tabela de batalhas por perfil, mostramos votes e championships
-  document.getElementById('stats-wins').textContent = galleryPhoto ? (galleryPhoto.votes || 0) : '—'
-  document.getElementById('stats-losses').textContent = '—'
 
   showScreen('screen-profile-stats')
 }
@@ -615,9 +607,11 @@ async function galleryVote(side) {
   document.getElementById('battle-left').onclick = null
   document.getElementById('battle-right').onclick = null
 
-  // Atualiza votos
+  // Atualiza votos do vencedor e derrota do perdedor
   await db.from('gallery_photos').update({ votes: (winner.votes || 0) + 1 }).eq('id', winner.id)
+  await db.from('gallery_photos').update({ losses: (loser.losses || 0) + 1 }).eq('id', loser.id)
   winner.votes = (winner.votes || 0) + 1
+  loser.losses = (loser.losses || 0) + 1
 
   const winnerSide = side
   const loserSide = side === 'left' ? 'right' : 'left'
