@@ -904,31 +904,39 @@ async function loadAdminConvMessages(convId, card) {
 async function adminDeleteGalleryPhoto(id, url, btn) {
   const confirmed = await showConfirm('Delete this photo from the gallery? This cannot be undone.')
   if (!confirmed) return
+
   btn.disabled = true
   btn.textContent = 'Deleting...'
+
   const token = adminToken || sessionStorage.getItem('admin_token')
-  if (!token) { btn.textContent = '❌ Not authenticated'; return }
+  if (!token) {
+    btn.textContent = '❌ Not authenticated'
+    btn.disabled = false
+    return
+  }
+
   try {
     const res = await fetch('/api/admin-delete-gallery', {
-  method: 'DELETE',
-  headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
-  body: JSON.stringify({ photoId: id, photoUrl: url })
-})
-if (!res.ok) {
-  const errorData = await res.json()
-  btn.textContent = `❌ ${errorData.error || 'Error'}`
-  btn.disabled = false
-  return
-}
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+      body: JSON.stringify({ photoId: id, photoUrl: url })
     })
-    if (!res.ok) { btn.textContent = '❌ Error'; btn.disabled = false; return }
+
+    if (!res.ok) {
+      const errorData = await res.json()
+      btn.textContent = `❌ ${errorData.error || 'Error'}`
+      btn.disabled = false
+      return
+    }
+
+    // Sucesso: remove o card da galeria
     btn.closest('.admin-gallery-card').remove()
   } catch (e) {
+    console.error('Delete error:', e)
     btn.textContent = '❌ Error'
     btn.disabled = false
   }
 }
-
 // ========== ONLINE COUNT ==========
 async function refreshOnlineCount() {
   const { count } = await db.from('chat_profiles').select('*', { count: 'exact', head: true }).eq('online', true)
