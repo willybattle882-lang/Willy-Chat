@@ -18,11 +18,16 @@
       <p class="tagline">anonymous · photo chat · 18+</p>
     </header>
     <div class="home-buttons">
-      <button class="btn-main" onclick="startUpload()">📸 Start with a photo</button>
-      <button class="btn-main secondary" onclick="showResumeScreen()">🔗 I have a code</button>
+      <button class="btn-main" onclick="startUpload()">💬 Chat anonymously</button>
+      <button class="btn-main secondary" onclick="startGalleryBattle()">⚔️ Battle</button>
+      <button class="btn-main ghost" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
     </div>
     <div id="online-count" class="total-label"></div>
-    <footer class="site-footer"><a href="#" onclick="showScreen('screen-privacy')">Privacy</a> · <a href="#" onclick="showAdminLogin()">Admin</a></footer>
+    <footer class="site-footer">
+      <a href="#" onclick="showScreen('screen-privacy')">Privacy</a> ·
+      <a href="#" onclick="showResumeScreen()">I have a code</a> ·
+      <a href="#" onclick="showAdminLogin()">Admin</a>
+    </footer>
   </div>
 
   <!-- RESUME -->
@@ -52,6 +57,10 @@
         <input type="checkbox" id="consent-check" onchange="updateSendBtn()" />
         <span>I am 18+ and consent to anonymous display</span>
       </label>
+      <label class="consent-label gallery-consent-wrap">
+        <input type="checkbox" id="gallery-consent-check" />
+        <span>Add my photo to the <strong>public</strong> Hall of Fame — visible to everyone, no account needed</span>
+      </label>
       <button class="btn-main" id="btn-send" onclick="uploadPhoto()" disabled>Enter & find partner</button>
       <p id="upload-status" class="status-msg"></p>
     </div>
@@ -66,7 +75,22 @@
       <div class="code-display" id="profile-code-display">------</div>
       <button class="btn-main" onclick="copyCode()">📋 Copy code</button>
       <p class="sub warning">⚠️ Without this code you won't be able to resume your profile.</p>
-      <button class="btn-main secondary" onclick="enterQueue()">⚔️ Find a partner now</button>
+      <button class="btn-main secondary" onclick="enterQueue()">💬 Find a partner now</button>
+    </div>
+  </div>
+
+  <!-- GALLERY CONSENT (para usuários retornando) -->
+  <div id="screen-gallery-consent" class="screen">
+    <button class="btn-back" onclick="enterQueue()">← Skip</button>
+    <div class="card">
+      <div style="font-size:3rem">🏆</div>
+      <h2>Hall of Fame</h2>
+      <div class="consent-photo-preview">
+        <img id="consent-preview-photo" />
+      </div>
+      <p class="sub">Add your photo to the public Hall of Fame?<br/><strong>Anyone can see it</strong> — no login needed.</p>
+      <button class="btn-main" onclick="giveGalleryConsent()">Yes, add my photo</button>
+      <button class="btn-main secondary" onclick="enterQueue()">No thanks</button>
     </div>
   </div>
 
@@ -105,6 +129,142 @@
     <p id="chat-status" class="status-msg"></p>
   </div>
 
+  <!-- HALL OF FAME -->
+  <div id="screen-hall" class="screen hall-screen">
+    <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
+    <div class="hall-header">
+      <h2 class="section-title">🏆 Hall of Fame</h2>
+      <button class="btn-upload-gallery" onclick="showGalleryUpload('screen-hall')">📸 Submit photo</button>
+    </div>
+    <div id="hall-grid" class="hall-grid"></div>
+  </div>
+
+  <!-- PHOTO DETAIL (curtidas + comentários) -->
+  <div id="screen-photo-detail" class="screen photo-detail-screen">
+    <button class="btn-back" onclick="loadHallOfFame()">← Back</button>
+    <div class="photo-detail-wrap">
+      <div class="photo-detail-img-wrap">
+        <img id="detail-photo-img" />
+      </div>
+      <div class="photo-detail-nav">
+        <button id="detail-prev-btn" class="btn-next" style="display: none;" onclick="navigatePhoto(-1)">◀ Previous</button>
+        <button id="detail-next-btn" class="btn-next" style="display: none;" onclick="navigatePhoto(1)">Next ▶</button>
+      </div>
+      <div class="photo-detail-info">
+        <div class="detail-likes-row">
+          <button class="like-btn" id="detail-like-btn" onclick="toggleLike()">❤️ <span id="detail-likes-count">0</span></button>
+        </div>
+        <div class="comments-section">
+          <h3>Comments</h3>
+          <div id="comments-list" class="comments-list"></div>
+          <div class="comment-input-wrap">
+            <input type="text" id="comment-input" placeholder="Add a comment..." maxlength="300"
+              onkeydown="if(event.key==='Enter') submitComment()" />
+            <button onclick="submitComment()">Post</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GALLERY BATTLE -->
+  <div id="screen-battle" class="screen battle-screen">
+    <div class="battle-top-bar">
+      <button class="btn-back-inline" onclick="showScreen('screen-home')">← Home</button>
+      <button class="btn-upload-gallery" onclick="showGalleryUpload('screen-battle')">📸 Submit photo</button>
+    </div>
+    <p class="vote-instruction">Which one do you prefer?</p>
+    <p id="battle-round" class="battle-round-counter"></p>
+    <div class="battle-arena">
+      <div class="fighter-wrap">
+        <div class="battle-frame" id="battle-left" onclick="galleryVote('left')">
+          <img id="battle-img-left" />
+          <div class="vote-overlay">❤️ Vote</div>
+        </div>
+        <div class="vote-count" id="battle-count-left"></div>
+      </div>
+      <div class="vs-badge">VS</div>
+      <div class="fighter-wrap">
+        <div class="battle-frame" id="battle-right" onclick="galleryVote('right')">
+          <img id="battle-img-right" />
+          <div class="vote-overlay">❤️ Vote</div>
+        </div>
+        <div class="vote-count" id="battle-count-right"></div>
+      </div>
+    </div>
+    <p id="battle-status" class="status-msg"></p>
+    <div class="battle-actions" id="battle-actions" style="display:none">
+      <button class="btn-main" onclick="nextBattleRound()">⚔️ Next battle</button>
+      <button class="btn-main secondary" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
+      <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
+    </div>
+  </div>
+
+  <!-- GALLERY UPLOAD -->
+  <div id="screen-gallery-upload" class="screen">
+    <button class="btn-back" id="gallery-upload-back" onclick="showScreen('screen-home')">← Back</button>
+    <div class="upload-box">
+      <h2>Add to gallery</h2>
+      <p class="sub">Your photo will appear publicly in the Hall of Fame 🏆</p>
+      <label class="upload-area">
+        <input type="file" id="gallery-file-input" accept="image/*" onchange="previewGalleryFile(event)" />
+        <div id="gallery-upload-placeholder"><span class="upload-icon">📷</span><span>Click to choose</span></div>
+        <img id="gallery-preview-img" style="display:none" />
+      </label>
+      <label class="consent-label gallery-consent-wrap">
+        <input type="checkbox" id="gallery-upload-consent" onchange="updateGalleryUploadBtn()" />
+        <span>I am 18+, this photo is mine, and I consent to it being <strong>publicly visible</strong> to anyone on this platform</span>
+      </label>
+      <button class="btn-main" id="btn-gallery-send" onclick="uploadToGallery()" disabled>Add to Hall of Fame</button>
+      <p id="gallery-upload-status" class="status-msg"></p>
+    </div>
+  </div>
+
+  <!-- CHAMPION -->
+  <div id="screen-champion" class="screen">
+    <div class="card">
+      <div style="font-size:3rem">🏆</div>
+      <h2>Champion!</h2>
+      <p class="sub">This photo survived all 10 rounds</p>
+      <div class="champion-photo-wrap">
+        <img id="champion-img" />
+      </div>
+      <p class="sub">❤️ <span id="champion-votes">0</span> total votes</p>
+      <button class="btn-main" onclick="startGalleryBattle()">🔄 Start over with new pictures</button>
+      <button class="btn-main secondary" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
+      <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
+    </div>
+  </div>
+
+  <!-- PROFILE STATS -->
+  <div id="screen-profile-stats" class="screen">
+    <button class="btn-back" onclick="showScreen('screen-resume')">← Back</button>
+    <div class="card wide">
+      <div class="profile-stats-photo">
+        <img id="stats-photo" />
+      </div>
+      <h2>Your stats</h2>
+      <div class="stats-grid">
+        <div class="stat-tile">
+          <span id="stats-wins" class="stat-num win">0</span>
+          <span class="stat-label">⚔️ Battles won</span>
+        </div>
+        <div class="stat-tile">
+          <span id="stats-losses" class="stat-num loss">0</span>
+          <span class="stat-label">💀 Battles lost</span>
+        </div>
+        <div class="stat-tile">
+          <span id="stats-champ" class="stat-num champ">0</span>
+          <span class="stat-label">🏆 Championships</span>
+        </div>
+      </div>
+      <p id="stats-gallery-note" class="sub"></p>
+      <button class="btn-main" onclick="enterQueue()">💬 Find a partner</button>
+      <button id="btn-join-hall" class="btn-main secondary" onclick="joinHallFromStats()" style="display:none">🏆 Join Hall of Fame</button>
+      <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
+    </div>
+  </div>
+
   <!-- PRIVACY -->
   <div id="screen-privacy" class="screen">
     <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
@@ -115,14 +275,13 @@
       <p>No email, no username. Your photo is your identity. Messages are not linked to any personal data.</p>
       <h3>Profile code</h3>
       <p>Your 6-digit code is the only way to recover your profile. We do not store any information that links the code to your identity.</p>
-      <h3>Chat storage</h3>
-      <p>Messages are stored in transit and at rest. They are only accessible to the two participants of a conversation.</p>
+      <h3>Hall of Fame</h3>
+      <p>Photos added to the Hall of Fame are publicly visible to anyone visiting the site. You must explicitly consent before your photo is added. You can request removal via the admin contact.</p>
       <h3>Consent & removal</h3>
-      <p>You must be 18+. You consent to your photo being shown anonymously to matched users only.</p>
+      <p>You must be 18+. You consent to your photo being shown anonymously to matched users only, unless you opt into the Hall of Fame.</p>
       <button class="btn-main secondary" onclick="showScreen('screen-home')" style="margin-top:1rem">← Back</button>
     </div>
   </div>
-
 
   <!-- ADMIN LOGIN -->
   <div id="screen-admin-login" class="screen">
@@ -138,7 +297,7 @@
   <!-- ADMIN PANEL -->
   <div id="screen-admin" class="screen" style="justify-content:flex-start; padding-top:3.5rem; overflow-y:auto">
     <button class="btn-back" onclick="showScreen('screen-home')">← Back</button>
-    <h2 class="gallery-title">🛡️ Conversations</h2>
+    <h2 class="section-title">🛡️ Admin Panel</h2>
     <div id="admin-conversations" style="width:100%; max-width:640px; display:flex; flex-direction:column; gap:0.75rem; padding-bottom:2rem"></div>
   </div>
 
@@ -149,6 +308,19 @@
       <div style="display:flex; gap:0.75rem;">
         <button class="btn-main secondary" style="flex:1" onclick="resolveConfirm(false)">Cancel</button>
         <button class="btn-main" style="flex:1; background:#ff3c3c" onclick="resolveConfirm(true)">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- REPLY MODAL -->
+  <div id="reply-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:999; align-items:center; justify-content:center;">
+    <div class="modal-box">
+      <p id="reply-to-text" class="reply-preview"></p>
+      <input type="text" id="reply-input" class="input-field" placeholder="Your reply..." maxlength="300" 
+        onkeydown="if(event.key==='Enter') submitReply()" />
+      <div style="display:flex; gap:0.75rem;">
+        <button class="btn-main secondary" style="flex:1" onclick="closeReplyModal()">Cancel</button>
+        <button class="btn-main" style="flex:1" onclick="submitReply()">Reply</button>
       </div>
     </div>
   </div>
