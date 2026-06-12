@@ -115,15 +115,23 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
 #message-input:focus { border-color: var(--accent); }
 #send-btn { background: var(--accent); border: none; border-radius: 40px; padding: 0 1.2rem; font-weight: bold; color: white; cursor: pointer; font-family: inherit; font-size: 0.9rem; }
 
-/* HALL OF FAME - CORREÇÃO DO GRID (SEM EMPILHAMENTO) */
+/* ========== HALL OF FAME – GRID CORRIGIDO (SEM EMPILHAMENTO) ========== */
+.hall-screen {
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding-top: 3.5rem;
+}
+
 .hall-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   gap: 0.5rem;
   width: 100%;
   max-width: 640px;
+  margin: 0 auto;
   overflow-y: auto;
   max-height: calc(100dvh - 140px);
+  padding: 0.25rem;
   padding-bottom: 1rem;
   align-items: start;
 }
@@ -138,6 +146,7 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   display: flex;
   flex-direction: column;
   width: 100%;
+  min-width: 0; /* evita estouro do grid */
 }
 
 .hall-card:hover {
@@ -161,6 +170,15 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+.hall-card-footer {
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  flex-shrink: 0;
 }
 
 .hall-card-likes { color: var(--accent); font-weight: 600; }
