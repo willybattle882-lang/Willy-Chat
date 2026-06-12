@@ -15,14 +15,15 @@ let isMatching = false
 
 // Admin
 let adminToken = null
-let adminActiveTab = 'gallery' // 'gallery' ou 'conversations'
+let adminActiveTab = 'gallery'
 
 // Hall of Fame
 let currentPhotoId = null
 let myLikedPhotos = JSON.parse(localStorage.getItem('liked_photos') || '[]')
 let replyTargetId = null
-let galleryPhotosList = []        // lista global de fotos da galeria
+let galleryPhotosList = []
 let currentPhotoIndex = -1
+let keyboardListenerActive = false
 
 // Battle
 let battleLeft = null
@@ -56,6 +57,38 @@ function resolveConfirm(val) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(id).classList.add('active')
+  
+  // Gerencia listener de teclado para tela de detalhe
+  if (id === 'screen-photo-detail') {
+    enableKeyboardNavigation()
+  } else {
+    disableKeyboardNavigation()
+  }
+}
+
+function enableKeyboardNavigation() {
+  if (keyboardListenerActive) return
+  window.addEventListener('keydown', handlePhotoDetailKeydown)
+  keyboardListenerActive = true
+}
+
+function disableKeyboardNavigation() {
+  if (!keyboardListenerActive) return
+  window.removeEventListener('keydown', handlePhotoDetailKeydown)
+  keyboardListenerActive = false
+}
+
+function handlePhotoDetailKeydown(e) {
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    navigatePhoto(-1)
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    navigatePhoto(1)
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    loadHallOfFame()
+  }
 }
 
 function showHome() {
@@ -187,11 +220,10 @@ async function giveGalleryConsent() {
 async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
   
-  const { data: galleryPhoto, error: gpError } = await db.from('gallery_photos')
+  const { data: galleryPhoto } = await db.from('gallery_photos')
     .select('id, votes, losses, championships')
     .eq('profile_id', profile.id)
     .maybeSingle()
-  
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
@@ -210,18 +242,13 @@ async function loadProfileStats(profile) {
 
 // ========== FILA ==========
 async function enterQueue() {
-  if (isMatching) {
-    console.log('[enterQueue] Já está pareando, ignorando...')
-    return
-  }
+  if (isMatching) return
   isMatching = true
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
-  console.log('[enterQueue] Atualizando status online e waiting para ID:', myProfile.id)
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
-  console.log('[enterQueue] Perfil confirmado na fila')
 
   matchPollInterval = setInterval(async () => {
     const { data: conv } = await db.from('chat_conversations')
@@ -249,21 +276,18 @@ async function enterQueue() {
     if (myProfile.id !== p1 && myProfile.id !== p2) return
     if (myProfile.id !== Math.min(p1, p2)) return
 
-    console.log('[match] Tentando parear', p1, 'com', p2)
     const { data: conv2, error } = await db.from('chat_conversations')
       .insert({ profile1_id: p1, profile2_id: p2 })
       .select().single()
 
     if (error || !conv2) return
 
-    console.log('[match] Conversa criada com sucesso:', conv2.id)
     await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
     await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
   }, 2000)
 }
 
 async function startChat(conv, partnerId) {
-  console.log('[startChat] Iniciando chat com partner:', partnerId)
   const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
   currentConversation = { id: conv.id, partner_id: partnerId }
 
@@ -419,7 +443,9 @@ async function loadHallOfFame() {
 
   grid.innerHTML = galleryPhotosList.map((p, idx) => `
     <div class="hall-card" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
-      <div class="hall-card-img"><img src="${p.photo_url}" loading="lazy" /></div>
+      <div class="hall-card-img">
+        <img src="${p.photo_url}" loading="lazy" />
+      </div>
       <div class="hall-card-footer">
         <span class="hall-card-likes">❤️ ${likeMap[p.id] || 0}</span>
         <span class="hall-card-comments">💬 ${commentMap[p.id] || 0}</span>
@@ -441,8 +467,8 @@ function updateNavButtons() {
   const prevBtn = document.getElementById('detail-prev-btn')
   const nextBtn = document.getElementById('detail-next-btn')
   if (prevBtn && nextBtn) {
-    prevBtn.style.display = currentPhotoIndex > 0 ? 'block' : 'none'
-    nextBtn.style.display = currentPhotoIndex < galleryPhotosList.length - 1 ? 'block' : 'none'
+    prevBtn.style.display = currentPhotoIndex > 0 ? 'flex' : 'none'
+    nextBtn.style.display = currentPhotoIndex < galleryPhotosList.length - 1 ? 'flex' : 'none'
   }
 }
 
@@ -770,7 +796,6 @@ async function loadAdminPanel() {
   showScreen('screen-admin')
   const container = document.getElementById('admin-conversations')
   
-  // Cria estrutura de abas se não existir
   if (!document.getElementById('admin-tabs')) {
     const tabsHtml = `
       <div id="admin-tabs" style="display:flex; gap:0.5rem; margin-bottom:1rem;">
