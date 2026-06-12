@@ -150,7 +150,11 @@ async function uploadPhoto() {
   localStorage.setItem('my_chat_code', code)
 
   if (galleryConsent) {
-    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: photoUrl })
+    await db.from('gallery_photos').insert({ 
+      profile_id: myProfile.id, 
+      photo_url: photoUrl,
+      created_at: new Date().toISOString()
+    })
   }
 
   document.getElementById('profile-code-display').textContent = code
@@ -187,7 +191,11 @@ async function giveGalleryConsent() {
   await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
   const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
   if (!existing) {
-    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
+    await db.from('gallery_photos').insert({ 
+      profile_id: myProfile.id, 
+      photo_url: myProfile.photo_url,
+      created_at: new Date().toISOString()
+    })
   }
   enterQueue()
 }
@@ -225,7 +233,11 @@ async function joinHallFromStats() {
   await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
   const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
   if (!existing) {
-    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
+    await db.from('gallery_photos').insert({ 
+      profile_id: myProfile.id, 
+      photo_url: myProfile.photo_url,
+      created_at: new Date().toISOString()
+    })
   }
   const joinBtn = document.getElementById('btn-join-hall')
   if (joinBtn) joinBtn.style.display = 'none'
@@ -239,8 +251,11 @@ async function enterQueue() {
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
+  // Remove o próprio perfil da fila antes de reinserir (evita duplicatas)
+  await db.from('chat_waiting_queue').delete().eq('profile_id', myProfile.id)
+
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
-  await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
+  await db.from('chat_waiting_queue').insert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
   matchPollInterval = setInterval(async () => {
     // 1) Já existe conversa ativa?
@@ -264,7 +279,6 @@ async function enterQueue() {
 
     if (!queue || queue.length < 2) return
 
-    // Filtra eu mesmo
     const others = queue.filter(q => q.profile_id !== myProfile.id)
     if (others.length === 0) return
 
@@ -533,7 +547,7 @@ async function toggleLike() {
   document.getElementById('detail-like-btn').className = `like-btn ${myLikedPhotos.includes(currentPhotoId) ? 'liked' : ''}`
 }
 
-// ========== COMENTÁRIOS CORRIGIDOS ==========
+// ========== COMENTÁRIOS ==========
 async function loadComments(photoId) {
   const { data: comments } = await db.from('gallery_comments')
     .select('*').eq('photo_id', photoId).is('reply_to', null).order('created_at', { ascending: true })
@@ -788,7 +802,11 @@ async function uploadToGallery() {
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
   const photoUrl = urlData.publicUrl
 
-  const { error: dbErr } = await db.from('gallery_photos').insert({ photo_url: photoUrl, votes: 0 })
+  const { error: dbErr } = await db.from('gallery_photos').insert({ 
+    photo_url: photoUrl, 
+    votes: 0,
+    created_at: new Date().toISOString()
+  })
   if (dbErr) { status.textContent = 'Error saving photo. Try again.'; btn.disabled = false; return }
 
   status.textContent = '✅ Photo added to the Hall of Fame!'
@@ -887,9 +905,10 @@ async function switchAdminTab(tab) {
     btnConv.style.background = ''
     galleryDiv.innerHTML = '<p class="status-msg">Loading gallery...</p>'
 
+    // Ordena por created_at decrescente (mais recentes primeiro)
     const { data: galleryPhotos } = await db.from('gallery_photos')
-      .select('id, photo_url, votes, championships')
-      .order('id', { ascending: false })
+      .select('id, photo_url, votes, championships, created_at')
+      .order('created_at', { ascending: false })
 
     if (!galleryPhotos || galleryPhotos.length === 0) {
       galleryDiv.innerHTML = '<p class="status-msg">No photos in gallery.</p>'
