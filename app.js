@@ -904,13 +904,10 @@ async function loadAdminConvMessages(convId, card) {
 async function adminDeleteGalleryPhoto(id, url, btn) {
   const confirmed = await showConfirm('Delete this photo from the gallery? This cannot be undone.')
   if (!confirmed) return
-
   btn.disabled = true
   btn.textContent = 'Deleting...'
-
   const token = adminToken || sessionStorage.getItem('admin_token')
   if (!token) { btn.textContent = '❌ Not authenticated'; return }
-
   try {
     const res = await fetch('/api/admin-delete-gallery', {
       method: 'DELETE',
