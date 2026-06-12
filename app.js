@@ -246,56 +246,48 @@ async function joinHallFromStats() {
 }
 
 async function removeFromHall() {
-  if (!myProfile) {
-    alert('No profile loaded.');
-    return;
-  }
+  if (!myProfile) return
 
-  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? All likes and comments will be lost forever.');
-  if (!confirmed) return;
+  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? All likes and comments will be lost forever.')
+  if (!confirmed) return
 
-  // Buscar o registro da galeria associado ao perfil
-  const { data: galleryPhoto, error: fetchError } = await db.from('gallery_photos')
+  // Buscar o ID da foto na galeria associada a este perfil
+  const { data: galleryPhoto, error: fetchError } = await db
+    .from('gallery_photos')
     .select('id')
     .eq('profile_id', myProfile.id)
-    .maybeSingle();
+    .maybeSingle()
 
   if (fetchError) {
-    console.error('Erro ao buscar foto na galeria:', fetchError);
-    alert('Error checking gallery status. Try again.');
-    return;
+    console.error('Erro ao buscar foto:', fetchError)
+    alert('Could not find your photo in the Hall of Fame.')
+    return
   }
 
   if (!galleryPhoto) {
-    alert('Your photo is not in the Hall of Fame.');
-    return;
+    alert('Your photo is not in the Hall of Fame.')
+    return
   }
 
   try {
-    // Deletar likes e comentários (se existirem) – ON DELETE CASCADE é melhor, mas fazemos manualmente por segurança
-    await db.from('gallery_likes').delete().eq('photo_id', galleryPhoto.id);
-    await db.from('gallery_comments').delete().eq('photo_id', galleryPhoto.id);
+    // --- CÓDIGO CORRIGIDO PARA EVITAR CORS ---
+    // 1. Deleta a foto usando a API REST (esta é a linha que causava o erro)
+    const { error: deleteError } = await db
+      .from('gallery_photos')
+      .delete()
+      .eq('id', galleryPhoto.id)
 
-    // Deletar a foto da galeria
-    const { error: deleteError } = await db.from('gallery_photos').delete().eq('id', galleryPhoto.id);
-    if (deleteError) throw deleteError;
+    if (deleteError) throw deleteError
 
-    // Atualizar o campo gallery_consent do perfil para false
-    const { error: updateError } = await db.from('chat_profiles')
-      .update({ gallery_consent: false })
-      .eq('id', myProfile.id);
-    if (updateError) throw updateError;
+    // 2. Atualiza o consentimento no perfil
+    await db.from('chat_profiles').update({ gallery_consent: false }).eq('id', myProfile.id)
 
-    // Atualizar o objeto local myProfile
-    myProfile.gallery_consent = false;
+    alert('✅ Your photo has been removed from the Hall of Fame.')
+    await loadProfileStats(myProfile)
 
-    alert('Your photo has been removed from the Hall of Fame.');
-    
-    // Recarregar a tela de estatísticas para atualizar a interface
-    await loadProfileStats(myProfile);
   } catch (err) {
-    console.error('Erro ao remover da galeria:', err);
-    alert('Failed to remove. Please try again later.');
+    console.error('Erro ao remover da galeria:', err)
+    alert('❌ Failed to remove. Check the console for details.')
   }
 }
 
