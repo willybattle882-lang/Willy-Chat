@@ -57,8 +57,6 @@ function resolveConfirm(val) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(id).classList.add('active')
-  
-  // Gerencia listener de teclado para tela de detalhe
   if (id === 'screen-photo-detail') {
     enableKeyboardNavigation()
   } else {
@@ -71,37 +69,19 @@ function enableKeyboardNavigation() {
   window.addEventListener('keydown', handlePhotoDetailKeydown)
   keyboardListenerActive = true
 }
-
 function disableKeyboardNavigation() {
   if (!keyboardListenerActive) return
   window.removeEventListener('keydown', handlePhotoDetailKeydown)
   keyboardListenerActive = false
 }
-
 function handlePhotoDetailKeydown(e) {
-  if (e.key === 'ArrowLeft') {
-    e.preventDefault()
-    navigatePhoto(-1)
-  } else if (e.key === 'ArrowRight') {
-    e.preventDefault()
-    navigatePhoto(1)
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    loadHallOfFame()
-  }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePhoto(-1) }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); navigatePhoto(1) }
+  else if (e.key === 'Escape') { e.preventDefault(); loadHallOfFame() }
 }
 
-function showHome() {
-  cleanup()
-  showScreen('screen-home')
-  refreshOnlineCount()
-}
-
-function startUpload() {
-  resetUploadForm()
-  showScreen('screen-upload')
-}
-
+function showHome() { cleanup(); showScreen('screen-home'); refreshOnlineCount() }
+function startUpload() { resetUploadForm(); showScreen('screen-upload') }
 function showResumeScreen() {
   document.getElementById('resume-code-input').value = ''
   document.getElementById('resume-error').textContent = ''
@@ -202,7 +182,6 @@ async function resumeWithCode() {
   myProfile = profile
   localStorage.setItem('my_chat_code', code)
   await db.from('chat_profiles').update({ online: true }).eq('id', myProfile.id)
-
   await loadProfileStats(profile)
 }
 
@@ -219,25 +198,41 @@ async function giveGalleryConsent() {
 // ========== PROFILE STATS ==========
 async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
-  
+
   const { data: galleryPhoto } = await db.from('gallery_photos')
     .select('id, votes, losses, championships')
     .eq('profile_id', profile.id)
     .maybeSingle()
+
+  const joinBtn = document.getElementById('btn-join-hall')
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
     document.getElementById('stats-losses').textContent = galleryPhoto.losses || 0
     document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
     document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
+    if (joinBtn) joinBtn.style.display = 'none'
   } else {
     document.getElementById('stats-wins').textContent = '—'
     document.getElementById('stats-losses').textContent = '—'
     document.getElementById('stats-champ').textContent = '—'
     document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
+    if (joinBtn) joinBtn.style.display = 'block'
   }
 
   showScreen('screen-profile-stats')
+}
+
+async function joinHallFromStats() {
+  if (!myProfile) return
+  await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
+  const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
+  if (!existing) {
+    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
+  }
+  const joinBtn = document.getElementById('btn-join-hall')
+  if (joinBtn) joinBtn.style.display = 'none'
+  await loadProfileStats(myProfile)
 }
 
 // ========== FILA ==========
@@ -270,7 +265,6 @@ async function enterQueue() {
       .limit(2)
 
     if (!queue || queue.length < 2) return
-
     const p1 = queue[0].profile_id
     const p2 = queue[1].profile_id
     if (myProfile.id !== p1 && myProfile.id !== p2) return
@@ -429,42 +423,36 @@ async function loadHallOfFame() {
   const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('votes', { ascending: false })
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
-  
-  // 🔥 FORÇA ESTILOS INLINE NO GRID
+
   grid.style.display = 'grid'
   grid.style.gridTemplateColumns = 'repeat(3, 1fr)'
   grid.style.gap = '12px'
   grid.style.width = '100%'
   grid.style.maxWidth = '640px'
   grid.style.margin = '0 auto'
-  
+
   if (!galleryPhotosList.length) {
     grid.innerHTML = '<p style="color:var(--muted);text-align:center;grid-column:1/-1">No photos yet.</p>'
     return
   }
 
-  const photoIds = galleryPhotosList.map(p => p.id)
   const { data: likes } = await db.from('gallery_likes').select('photo_id')
   const { data: comments } = await db.from('gallery_comments').select('photo_id').is('reply_to', null)
   const likeMap = {}, commentMap = {}
   ;(likes || []).forEach(l => { likeMap[l.photo_id] = (likeMap[l.photo_id] || 0) + 1 })
   ;(comments || []).forEach(c => { commentMap[c.photo_id] = (commentMap[c.photo_id] || 0) + 1 })
 
-  // 🔥 CADA CARD TAMBÉM RECEBE ESTILOS INLINE PARA EVITAR QUEBRA
   grid.innerHTML = galleryPhotosList.map((p, idx) => `
-    <div class="hall-card" style="display: flex; flex-direction: column; width: 100%; min-width: 0; cursor: pointer; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
-      <div style="width: 100%; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--surface2);">
-        <img src="${p.photo_url}" style="width: 100%; height: 100%; object-fit: contain; display: block;" loading="lazy" />
+    <div style="display:flex;flex-direction:column;width:100%;min-width:0;cursor:pointer;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
+      <div style="width:100%;padding-top:100%;position:relative;background:var(--surface2);">
+        <img src="${p.photo_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--surface2);" loading="lazy" />
       </div>
-      <div style="padding: 0.35rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
-        <span style="color: var(--accent); font-weight: 600;">❤️ ${likeMap[p.id] || 0}</span>
-        <span style="color: var(--muted);">💬 ${commentMap[p.id] || 0}</span>
+      <div style="padding:0.35rem 0.5rem;display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;">
+        <span style="color:var(--accent);font-weight:600;">❤️ ${likeMap[p.id] || 0}</span>
+        <span style="color:var(--muted);">💬 ${commentMap[p.id] || 0}</span>
       </div>
     </div>
   `).join('')
-
-  // 🔥 FORÇA REFLOW (garante que o grid seja recalculado)
-  grid.offsetHeight
 }
 
 async function openPhotoDetail(photoId, photoUrl, index) {
@@ -522,10 +510,7 @@ async function toggleLike() {
 
 async function loadComments(photoId) {
   const { data: comments } = await db.from('gallery_comments')
-    .select('*')
-    .eq('photo_id', photoId)
-    .is('reply_to', null)
-    .order('created_at', { ascending: true })
+    .select('*').eq('photo_id', photoId).is('reply_to', null).order('created_at', { ascending: true })
 
   const list = document.getElementById('comments-list')
   if (!comments || comments.length === 0) { list.innerHTML = '<p style="color:var(--muted);font-size:0.82rem">No comments yet. Be the first!</p>'; return }
@@ -571,12 +556,10 @@ function openReplyModal(commentId, previewText) {
   document.getElementById('reply-input').value = ''
   document.getElementById('reply-modal').style.display = 'flex'
 }
-
 function closeReplyModal() {
   document.getElementById('reply-modal').style.display = 'none'
   replyTargetId = null
 }
-
 async function submitReply() {
   const input = document.getElementById('reply-input')
   const text = input.value.trim()
@@ -589,7 +572,7 @@ async function submitReply() {
 
 // ========== GALLERY BATTLE ==========
 async function startGalleryBattle() {
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes')
+  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes, losses')
   if (!photos || photos.length < 2) {
     alert('Not enough photos in the Hall of Fame yet!')
     return
@@ -670,16 +653,13 @@ async function galleryVote(side) {
   document.getElementById(`battle-${winnerSide}`).classList.add('winner')
   document.getElementById(`battle-${loserSide}`).classList.add('loser')
   document.getElementById(`battle-count-${winnerSide}`).textContent = `❤️ ${winner.votes} votes`
-  document.getElementById(`battle-count-${loserSide}`).textContent = `💀 ${loser.votes || 0} votes`
+  document.getElementById(`battle-count-${loserSide}`).textContent = `💀 ${loser.losses} losses`
 
   battleLeft = winner
   battleRight = null
-
   battleRound++
-  setTimeout(() => {
-    battleRight = null
-    loadBattlePair()
-  }, 1500)
+
+  setTimeout(() => loadBattlePair(), 1500)
 }
 
 function nextBattleRound() {
@@ -695,7 +675,6 @@ async function showChampion(photo) {
   })
   const data = await res.json()
   photo.championships = data.championships || (photo.championships || 0) + 1
-
   document.getElementById('champion-img').src = photo.photo_url
   document.getElementById('champion-votes').textContent = photo.votes || 0
   showScreen('screen-champion')
@@ -757,13 +736,9 @@ async function uploadToGallery() {
 
   status.textContent = '✅ Photo added to the Hall of Fame!'
   setTimeout(() => {
-    if (galleryUploadReturnScreen === 'screen-hall') {
-      loadHallOfFame()
-    } else if (galleryUploadReturnScreen === 'screen-battle') {
-      startGalleryBattle()
-    } else {
-      showScreen(galleryUploadReturnScreen)
-    }
+    if (galleryUploadReturnScreen === 'screen-hall') loadHallOfFame()
+    else if (galleryUploadReturnScreen === 'screen-battle') startGalleryBattle()
+    else showScreen(galleryUploadReturnScreen)
   }, 1500)
 }
 
@@ -806,19 +781,39 @@ async function adminLogin() {
 }
 
 async function loadAdminPanel() {
+  // Verifica token antes de qualquer coisa
+  const token = adminToken || sessionStorage.getItem('admin_token')
+  if (!token) { showScreen('screen-admin-login'); return }
+
+  try {
+    const verifyRes = await fetch('/api/admin-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    })
+    if (!verifyRes.ok) {
+      sessionStorage.removeItem('admin_token')
+      adminToken = null
+      showScreen('screen-admin-login')
+      return
+    }
+  } catch {
+    showScreen('screen-admin-login')
+    return
+  }
+
   showScreen('screen-admin')
   const container = document.getElementById('admin-conversations')
-  
+
   if (!document.getElementById('admin-tabs')) {
-    const tabsHtml = `
-      <div id="admin-tabs" style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+    container.innerHTML = `
+      <div id="admin-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;">
         <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery Photos</button>
         <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Conversations</button>
       </div>
       <div id="admin-gallery-section"></div>
       <div id="admin-conv-section"></div>
     `
-    container.innerHTML = tabsHtml
     document.getElementById('admin-tab-gallery').onclick = () => switchAdminTab('gallery')
     document.getElementById('admin-tab-conv').onclick = () => switchAdminTab('conversations')
   }
@@ -831,16 +826,18 @@ async function switchAdminTab(tab) {
   const convDiv = document.getElementById('admin-conv-section')
   const btnGallery = document.getElementById('admin-tab-gallery')
   const btnConv = document.getElementById('admin-tab-conv')
-  
+
   if (tab === 'gallery') {
     galleryDiv.style.display = 'block'
     convDiv.style.display = 'none'
     btnGallery.style.background = 'var(--accent)'
     btnConv.style.background = ''
     galleryDiv.innerHTML = '<p class="status-msg">Loading gallery...</p>'
+
     const { data: galleryPhotos } = await db.from('gallery_photos')
       .select('id, photo_url, votes, championships')
       .order('id', { ascending: false })
+
     if (!galleryPhotos || galleryPhotos.length === 0) {
       galleryDiv.innerHTML = '<p class="status-msg">No photos in gallery.</p>'
       return
@@ -866,10 +863,12 @@ async function switchAdminTab(tab) {
     btnConv.style.background = 'var(--accent)'
     btnGallery.style.background = ''
     convDiv.innerHTML = '<p class="status-msg">Loading conversations...</p>'
+
     const { data: convs } = await db.from('chat_conversations')
       .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
       .order('started_at', { ascending: false })
       .limit(50)
+
     if (!convs || convs.length === 0) {
       convDiv.innerHTML = '<p class="status-msg">No conversations yet.</p>'
       return
@@ -882,7 +881,7 @@ async function switchAdminTab(tab) {
           <div class="admin-photos"><img src="${c.p2.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p2.code}</span><span class="admin-online ${c.p2.online ? 'on' : ''}"></span></div>
           <div class="admin-meta">
             <span class="${c.ended_at ? 'ended' : 'active'}">${c.ended_at ? '⚫ Ended' : '🟢 Active'}</span>
-            <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' })}</small>
+            <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
           </div>
         </div>
         <div class="admin-messages" id="admin-msgs-${c.id}" style="display:none"></div>
@@ -909,11 +908,7 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
   btn.textContent = 'Deleting...'
 
   const token = adminToken || sessionStorage.getItem('admin_token')
-  if (!token) {
-    btn.textContent = '❌ Not authenticated'
-    btn.disabled = false
-    return
-  }
+  if (!token) { btn.textContent = '❌ Not authenticated'; btn.disabled = false; return }
 
   try {
     const res = await fetch('/api/admin-delete-gallery', {
@@ -921,22 +916,19 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
       headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
       body: JSON.stringify({ photoId: id, photoUrl: url })
     })
-
     if (!res.ok) {
-      const errorData = await res.json()
-      btn.textContent = `❌ ${errorData.error || 'Error'}`
+      const err = await res.json()
+      btn.textContent = `❌ ${err.error || 'Error'}`
       btn.disabled = false
       return
     }
-
-    // Sucesso: remove o card da galeria
     btn.closest('.admin-gallery-card').remove()
   } catch (e) {
-    console.error('Delete error:', e)
     btn.textContent = '❌ Error'
     btn.disabled = false
   }
 }
+
 // ========== ONLINE COUNT ==========
 async function refreshOnlineCount() {
   const { count } = await db.from('chat_profiles').select('*', { count: 'exact', head: true }).eq('online', true)
@@ -972,13 +964,3 @@ window.addEventListener('load', async () => {
 window.addEventListener('beforeunload', () => {
   if (myProfile) db.from('chat_profiles').update({ online: false }).eq('id', myProfile.id)
 })
-
-async function joinHallFromStats() {
-  if (!myProfile) return
-  await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
-  const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
-  if (!existing) {
-    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
-  }
-  await loadProfileStats(myProfile)
-}
