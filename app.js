@@ -200,7 +200,7 @@ async function giveGalleryConsent() {
   enterQueue()
 }
 
-// ========== PROFILE STATS ==========
+// ========== PROFILE STATS (com botões Join/Remove) ==========
 async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
 
@@ -210,6 +210,7 @@ async function loadProfileStats(profile) {
     .maybeSingle()
 
   const joinBtn = document.getElementById('btn-join-hall')
+  const removeBtn = document.getElementById('btn-remove-hall')
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
@@ -217,12 +218,14 @@ async function loadProfileStats(profile) {
     document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
     document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
     if (joinBtn) joinBtn.style.display = 'none'
+    if (removeBtn) removeBtn.style.display = 'block'
   } else {
     document.getElementById('stats-wins').textContent = '—'
     document.getElementById('stats-losses').textContent = '—'
     document.getElementById('stats-champ').textContent = '—'
     document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
     if (joinBtn) joinBtn.style.display = 'block'
+    if (removeBtn) removeBtn.style.display = 'none'
   }
 
   showScreen('screen-profile-stats')
@@ -239,12 +242,46 @@ async function joinHallFromStats() {
       created_at: new Date().toISOString()
     })
   }
-  const joinBtn = document.getElementById('btn-join-hall')
-  if (joinBtn) joinBtn.style.display = 'none'
   await loadProfileStats(myProfile)
 }
 
-// ========== FILA (MATCHING CORRIGIDO) ==========
+async function removeFromHall() {
+  if (!myProfile) return
+
+  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? All likes and comments will be lost forever.')
+  if (!confirmed) return
+
+  // Buscar o registro da galeria associado ao perfil
+  const { data: galleryPhoto } = await db.from('gallery_photos')
+    .select('id')
+    .eq('profile_id', myProfile.id)
+    .maybeSingle()
+
+  if (!galleryPhoto) {
+    alert('Your photo is not in the Hall of Fame.')
+    return
+  }
+
+  try {
+    // Se as chaves estrangeiras não tiverem ON DELETE CASCADE, deletar likes/comments manualmente
+    await db.from('gallery_likes').delete().eq('photo_id', galleryPhoto.id)
+    await db.from('gallery_comments').delete().eq('photo_id', galleryPhoto.id)
+    
+    const { error } = await db.from('gallery_photos').delete().eq('id', galleryPhoto.id)
+    if (error) throw error
+
+    // Atualizar o consentimento no perfil
+    await db.from('chat_profiles').update({ gallery_consent: false }).eq('id', myProfile.id)
+
+    alert('Your photo has been removed from the Hall of Fame.')
+    await loadProfileStats(myProfile)
+  } catch (err) {
+    console.error('Erro ao remover da galeria:', err)
+    alert('Failed to remove. Try again later.')
+  }
+}
+
+// ========== FILA (MATCHING) ==========
 async function enterQueue() {
   if (isMatching) return
   isMatching = true
@@ -905,7 +942,6 @@ async function switchAdminTab(tab) {
     btnConv.style.background = ''
     galleryDiv.innerHTML = '<p class="status-msg">Loading gallery...</p>'
 
-    // Ordena por created_at decrescente (mais recentes primeiro)
     const { data: galleryPhotos } = await db.from('gallery_photos')
       .select('id, photo_url, votes, championships, created_at')
       .order('created_at', { ascending: false })
