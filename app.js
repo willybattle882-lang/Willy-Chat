@@ -440,7 +440,12 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 // ========== HALL OF FAME ==========
 async function loadHallOfFame() {
   showScreen('screen-hall')
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('votes', { ascending: false })
+  
+  // Ordena por created_at decrescente (mais recentes primeiro)
+  const { data: photos } = await db.from('gallery_photos')
+    .select('id, photo_url, votes, created_at')
+    .order('created_at', { ascending: false })
+  
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
 
