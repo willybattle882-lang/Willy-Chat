@@ -163,15 +163,6 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   display: block;
 }
 
-.hall-card-footer {
-  padding: 0.35rem 0.5rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
 .hall-card-likes { color: var(--accent); font-weight: 600; }
 .hall-card-comments { color: var(--muted); }
 
