@@ -429,19 +429,42 @@ async function loadHallOfFame() {
   const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('votes', { ascending: false })
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
+  
+  // 🔥 FORÇA ESTILOS INLINE NO GRID
+  grid.style.display = 'grid'
+  grid.style.gridTemplateColumns = 'repeat(3, 1fr)'
+  grid.style.gap = '12px'
+  grid.style.width = '100%'
+  grid.style.maxWidth = '640px'
+  grid.style.margin = '0 auto'
+  
   if (!galleryPhotosList.length) {
     grid.innerHTML = '<p style="color:var(--muted);text-align:center;grid-column:1/-1">No photos yet.</p>'
     return
   }
 
-  // ... (cálculo de likes/comments) ...
+  const photoIds = galleryPhotosList.map(p => p.id)
+  const { data: likes } = await db.from('gallery_likes').select('photo_id')
+  const { data: comments } = await db.from('gallery_comments').select('photo_id').is('reply_to', null)
+  const likeMap = {}, commentMap = {}
+  ;(likes || []).forEach(l => { likeMap[l.photo_id] = (likeMap[l.photo_id] || 0) + 1 })
+  ;(comments || []).forEach(c => { commentMap[c.photo_id] = (commentMap[c.photo_id] || 0) + 1 })
 
-  grid.innerHTML = galleryPhotosList.map((p, idx) => `...`).join('')
+  // 🔥 CADA CARD TAMBÉM RECEBE ESTILOS INLINE PARA EVITAR QUEBRA
+  grid.innerHTML = galleryPhotosList.map((p, idx) => `
+    <div class="hall-card" style="display: flex; flex-direction: column; width: 100%; min-width: 0; cursor: pointer; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
+      <div style="width: 100%; aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--surface2);">
+        <img src="${p.photo_url}" style="width: 100%; height: 100%; object-fit: contain; display: block;" loading="lazy" />
+      </div>
+      <div style="padding: 0.35rem 0.5rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
+        <span style="color: var(--accent); font-weight: 600;">❤️ ${likeMap[p.id] || 0}</span>
+        <span style="color: var(--muted);">💬 ${commentMap[p.id] || 0}</span>
+      </div>
+    </div>
+  `).join('')
 
-  // 🔥 FORÇA O REFLOW DO GRID (corrige empilhamento)
-  grid.style.display = 'none'
-  grid.offsetHeight // força reflow
-  grid.style.display = 'grid'
+  // 🔥 FORÇA REFLOW (garante que o grid seja recalculado)
+  grid.offsetHeight
 }
 
 async function openPhotoDetail(photoId, photoUrl, index) {
