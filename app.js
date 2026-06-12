@@ -910,9 +910,16 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
   if (!token) { btn.textContent = '❌ Not authenticated'; return }
   try {
     const res = await fetch('/api/admin-delete-gallery', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
-      body: JSON.stringify({ photoId: id, photoUrl: url })
+  method: 'DELETE',
+  headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+  body: JSON.stringify({ photoId: id, photoUrl: url })
+})
+if (!res.ok) {
+  const errorData = await res.json()
+  btn.textContent = `❌ ${errorData.error || 'Error'}`
+  btn.disabled = false
+  return
+}
     })
     if (!res.ok) { btn.textContent = '❌ Error'; btn.disabled = false; return }
     btn.closest('.admin-gallery-card').remove()
