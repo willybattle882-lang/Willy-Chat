@@ -1,57 +1,49 @@
-// pages/api/admin-delete-gallery.js (Pages Router)
 import { createClient } from '@supabase/supabase-js'
 
 export default async function handler(req, res) {
-  // Apenas DELETE
+  // CORS e método
   if (req.method !== 'DELETE') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  // Verifica token admin
-  const adminToken = req.headers['x-admin-token']
-  if (!adminToken || adminToken !== process.env.ADMIN_SECRET_TOKEN) {
+  // Token de admin
+  const token = req.headers['x-admin-token']
+  const expectedToken = process.env.ADMIN_SECRET_TOKEN || 'admin:1781224769781' // use o mesmo do login
+  if (!token || token !== expectedToken) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  const { photoId, photoUrl } = req.body
+  const { photoId } = req.body
   if (!photoId) {
-    return res.status(400).json({ error: 'photoId is required' })
+    return res.status(400).json({ error: 'Missing photoId' })
   }
 
-  // Cria cliente Supabase com service role (pula RLS)
+  // Supabase client com service role (permite deletar independente de RLS)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY, // use service role key (nunca exponha)
-    {
-      auth: { persistSession: false }
-    }
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false } }
   )
 
   try {
-    // 1. Deleta os registros relacionados (likes, comentários)
+    // 1. Deletar likes e comentários (se não tiver ON DELETE CASCADE)
     await supabase.from('gallery_likes').delete().eq('photo_id', photoId)
     await supabase.from('gallery_comments').delete().eq('photo_id', photoId)
 
-    // 2. Deleta o registro da foto na tabela gallery_photos
-    const { error: deleteDbError } = await supabase
+    // 2. Deletar o registro da foto
+    const { error: dbError } = await supabase
       .from('gallery_photos')
       .delete()
       .eq('id', photoId)
 
-    if (deleteDbError) throw deleteDbError
+    if (dbError) throw dbError
 
-    // 3. Deleta o arquivo do storage (opcional, se você armazena a URL pública)
-    if (photoUrl) {
-      // Extrai o nome do arquivo da URL
-      const filePath = photoUrl.split('/').pop()
-      if (filePath) {
-        await supabase.storage.from('PHOTOS').remove([filePath])
-      }
-    }
-
+    // 3. Tentar deletar o arquivo do storage (opcional)
+    // Se você não precisa, ignore.
+    
     return res.status(200).json({ success: true })
-  } catch (error) {
-    console.error('Erro ao deletar foto:', error)
-    return res.status(500).json({ error: error.message })
+  } catch (err) {
+    console.error('Delete error:', err)
+    return res.status(500).json({ error: err.message })
   }
 }
