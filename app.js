@@ -246,38 +246,56 @@ async function joinHallFromStats() {
 }
 
 async function removeFromHall() {
-  if (!myProfile) return
+  if (!myProfile) {
+    alert('No profile loaded.');
+    return;
+  }
 
-  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? All likes and comments will be lost forever.')
-  if (!confirmed) return
+  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? All likes and comments will be lost forever.');
+  if (!confirmed) return;
 
   // Buscar o registro da galeria associado ao perfil
-  const { data: galleryPhoto } = await db.from('gallery_photos')
+  const { data: galleryPhoto, error: fetchError } = await db.from('gallery_photos')
     .select('id')
     .eq('profile_id', myProfile.id)
-    .maybeSingle()
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('Erro ao buscar foto na galeria:', fetchError);
+    alert('Error checking gallery status. Try again.');
+    return;
+  }
 
   if (!galleryPhoto) {
-    alert('Your photo is not in the Hall of Fame.')
-    return
+    alert('Your photo is not in the Hall of Fame.');
+    return;
   }
 
   try {
-    // Se as chaves estrangeiras não tiverem ON DELETE CASCADE, deletar likes/comments manualmente
-    await db.from('gallery_likes').delete().eq('photo_id', galleryPhoto.id)
-    await db.from('gallery_comments').delete().eq('photo_id', galleryPhoto.id)
+    // Deletar likes e comentários (se existirem) – ON DELETE CASCADE é melhor, mas fazemos manualmente por segurança
+    await db.from('gallery_likes').delete().eq('photo_id', galleryPhoto.id);
+    await db.from('gallery_comments').delete().eq('photo_id', galleryPhoto.id);
+
+    // Deletar a foto da galeria
+    const { error: deleteError } = await db.from('gallery_photos').delete().eq('id', galleryPhoto.id);
+    if (deleteError) throw deleteError;
+
+    // Atualizar o campo gallery_consent do perfil para false
+    const { error: updateError } = await db.from('chat_profiles')
+      .update({ gallery_consent: false })
+      .eq('id', myProfile.id);
+    if (updateError) throw updateError;
+
+    // Atualizar o objeto local myProfile
+    myProfile.gallery_consent = false;
+
+    alert('Your photo has been removed from the Hall of Fame.');
     
-    const { error } = await db.from('gallery_photos').delete().eq('id', galleryPhoto.id)
-    if (error) throw error
-
-    // Atualizar o consentimento no perfil
-    await db.from('chat_profiles').update({ gallery_consent: false }).eq('id', myProfile.id)
-
-    alert('Your photo has been removed from the Hall of Fame.')
-    await loadProfileStats(myProfile)
+    // Recarregar a tela de estatísticas para atualizar a interface
+    await loadProfileStats(myProfile);
   } catch (err) {
-    console.error('Erro ao remover da galeria:', err)
-    alert('Failed to remove. Try again later.')
+    console.error('Erro ao remover da galeria:', err);
+    alert('Failed to remove. Please try again later.');
   }
 }
 
