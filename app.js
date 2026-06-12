@@ -57,11 +57,8 @@ function resolveConfirm(val) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(id).classList.add('active')
-  if (id === 'screen-photo-detail') {
-    enableKeyboardNavigation()
-  } else {
-    disableKeyboardNavigation()
-  }
+  if (id === 'screen-photo-detail') enableKeyboardNavigation()
+  else disableKeyboardNavigation()
 }
 
 function enableKeyboardNavigation() {
@@ -235,7 +232,7 @@ async function joinHallFromStats() {
   await loadProfileStats(myProfile)
 }
 
-// ========== FILA ==========
+// ========== FILA (MATCHING CORRIGIDO) ==========
 async function enterQueue() {
   if (isMatching) return
   isMatching = true
@@ -246,38 +243,61 @@ async function enterQueue() {
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
   matchPollInterval = setInterval(async () => {
-    const { data: conv } = await db.from('chat_conversations')
+    // 1) Já existe conversa ativa?
+    const { data: existingConv } = await db.from('chat_conversations')
       .select('*')
       .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
       .is('ended_at', null)
       .maybeSingle()
-
-    if (conv) {
+    if (existingConv) {
       clearInterval(matchPollInterval)
-      const partnerId = conv.profile1_id === myProfile.id ? conv.profile2_id : conv.profile1_id
-      await startChat(conv, partnerId)
+      const partnerId = existingConv.profile1_id === myProfile.id ? existingConv.profile2_id : existingConv.profile1_id
+      await startChat(existingConv, partnerId)
       return
     }
 
+    // 2) Buscar fila
     const { data: queue } = await db.from('chat_waiting_queue')
-      .select('profile_id, joined_at')
+      .select('profile_id')
       .order('joined_at', { ascending: true })
-      .limit(2)
+      .limit(5)
 
     if (!queue || queue.length < 2) return
-    const p1 = queue[0].profile_id
-    const p2 = queue[1].profile_id
-    if (myProfile.id !== p1 && myProfile.id !== p2) return
-    if (myProfile.id !== Math.min(p1, p2)) return
 
-    const { data: conv2, error } = await db.from('chat_conversations')
-      .insert({ profile1_id: p1, profile2_id: p2 })
-      .select().single()
+    // Filtra eu mesmo
+    const others = queue.filter(q => q.profile_id !== myProfile.id)
+    if (others.length === 0) return
 
-    if (error || !conv2) return
+    const partner = others[0]
+    const partnerId = partner.profile_id
 
-    await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
-    await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
+    // Verifica se o parceiro ainda está waiting e online
+    const { data: partnerProfile } = await db.from('chat_profiles')
+      .select('waiting, online')
+      .eq('id', partnerId)
+      .single()
+    if (!partnerProfile || !partnerProfile.waiting || !partnerProfile.online) {
+      await db.from('chat_waiting_queue').delete().eq('profile_id', partnerId)
+      return
+    }
+
+    // 3) Criar conversa
+    const { data: newConv, error: createError } = await db.from('chat_conversations')
+      .insert({ profile1_id: myProfile.id, profile2_id: partnerId })
+      .select()
+      .single()
+
+    if (createError) {
+      console.error('Erro criar conversa:', createError)
+      return
+    }
+
+    // 4) Limpar fila e atualizar status
+    await db.from('chat_waiting_queue').delete().in('profile_id', [myProfile.id, partnerId])
+    await db.from('chat_profiles').update({ waiting: false, current_conversation_id: newConv.id }).in('id', [myProfile.id, partnerId])
+
+    clearInterval(matchPollInterval)
+    await startChat(newConv, partnerId)
   }, 2000)
 }
 
@@ -444,8 +464,8 @@ async function loadHallOfFame() {
 
   grid.innerHTML = galleryPhotosList.map((p, idx) => `
     <div style="display:flex;flex-direction:column;width:100%;min-width:0;cursor:pointer;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
-      <div style="width:100%;padding-top:100%;position:relative;background:var(--surface2);">
-        <img src="${p.photo_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--surface2);" loading="lazy" />
+      <div style="width:100%;aspect-ratio:1/1;background:var(--surface2);display:flex;align-items:center;justify-content:center;">
+        <img src="${p.photo_url}" style="width:100%;height:100%;object-fit:contain;" loading="lazy" />
       </div>
       <div style="padding:0.35rem 0.5rem;display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;">
         <span style="color:var(--accent);font-weight:600;">❤️ ${likeMap[p.id] || 0}</span>
@@ -508,6 +528,7 @@ async function toggleLike() {
   document.getElementById('detail-like-btn').className = `like-btn ${myLikedPhotos.includes(currentPhotoId) ? 'liked' : ''}`
 }
 
+// ========== COMENTÁRIOS CORRIGIDOS ==========
 async function loadComments(photoId) {
   const { data: comments } = await db.from('gallery_comments')
     .select('*').eq('photo_id', photoId).is('reply_to', null).order('created_at', { ascending: true })
@@ -546,8 +567,18 @@ async function submitComment() {
   const text = input.value.trim()
   if (!text || !currentPhotoId) return
   input.value = ''
-  await db.from('gallery_comments').insert({ photo_id: currentPhotoId, content: text, alias: randomAlias() })
-  await loadComments(currentPhotoId)
+  try {
+    const { error } = await db.from('gallery_comments').insert({ 
+      photo_id: currentPhotoId, 
+      content: text, 
+      alias: randomAlias() 
+    })
+    if (error) throw error
+    await loadComments(currentPhotoId)
+  } catch (err) {
+    console.error('Erro ao comentar:', err)
+    alert('Não foi possível adicionar o comentário. Tente novamente.')
+  }
 }
 
 function openReplyModal(commentId, previewText) {
@@ -566,8 +597,18 @@ async function submitReply() {
   if (!text || !replyTargetId || !currentPhotoId) return
   input.value = ''
   closeReplyModal()
-  await db.from('gallery_comments').insert({ photo_id: currentPhotoId, content: text, alias: randomAlias(), reply_to: replyTargetId })
-  await loadComments(currentPhotoId)
+  try {
+    await db.from('gallery_comments').insert({ 
+      photo_id: currentPhotoId, 
+      content: text, 
+      alias: randomAlias(), 
+      reply_to: replyTargetId 
+    })
+    await loadComments(currentPhotoId)
+  } catch (err) {
+    console.error('Erro ao responder:', err)
+    alert('Não foi possível enviar a resposta.')
+  }
 }
 
 // ========== GALLERY BATTLE ==========
@@ -640,11 +681,21 @@ async function galleryVote(side) {
   document.getElementById('battle-left').onclick = null
   document.getElementById('battle-right').onclick = null
 
-  await fetch('/api/gallery-vote', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ winnerId: winner.id, loserId: loser.id })
-  })
+  try {
+    const res = await fetch('/api/gallery-vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ winnerId: winner.id, loserId: loser.id })
+    })
+    if (!res.ok) throw new Error('Falha no voto')
+  } catch (err) {
+    console.error('Erro ao votar:', err)
+    document.getElementById('battle-status').textContent = 'Error recording vote. Try again.'
+    setTimeout(() => loadBattlePair(), 1000)
+    return
+  }
+
+  // Atualiza os objetos locais
   winner.votes = (winner.votes || 0) + 1
   loser.losses = (loser.losses || 0) + 1
 
@@ -668,13 +719,14 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  const res = await fetch('/api/gallery-championship', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ photoId: photo.id })
-  })
-  const data = await res.json()
-  photo.championships = data.championships || (photo.championships || 0) + 1
+  try {
+    await fetch('/api/gallery-championship', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoId: photo.id })
+    })
+    photo.championships = (photo.championships || 0) + 1
+  } catch (err) { console.error(err) }
   document.getElementById('champion-img').src = photo.photo_url
   document.getElementById('champion-votes').textContent = photo.votes || 0
   showScreen('screen-champion')
@@ -781,7 +833,6 @@ async function adminLogin() {
 }
 
 async function loadAdminPanel() {
-  // Verifica token antes de qualquer coisa
   const token = adminToken || sessionStorage.getItem('admin_token')
   if (!token) { showScreen('screen-admin-login'); return }
 
@@ -791,13 +842,10 @@ async function loadAdminPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token })
     })
-    if (!verifyRes.ok) {
-      sessionStorage.removeItem('admin_token')
-      adminToken = null
-      showScreen('screen-admin-login')
-      return
-    }
+    if (!verifyRes.ok) throw new Error()
   } catch {
+    sessionStorage.removeItem('admin_token')
+    adminToken = null
     showScreen('screen-admin-login')
     return
   }
