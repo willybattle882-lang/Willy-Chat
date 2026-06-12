@@ -1,14 +1,13 @@
-export default function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).end()
 
   const { password } = req.body
-  if (!password) return res.status(400).json({ error: 'Password required' })
-
-  if (password !== process.env.ADMIN_PASSWORD) {
+  // Defina aqui a senha do admin (ou use variável de ambiente)
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'
+  if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Wrong password' })
   }
 
-  // Gera token de sessão simples (válido por 2 horas)
-  const token = Buffer.from(`admin:${Date.now()}`).toString('base64')
-  return res.status(200).json({ token })
+  const token = process.env.ADMIN_SECRET_TOKEN || 'meuTokenSuperSeguro'
+  res.status(200).json({ token })
 }
