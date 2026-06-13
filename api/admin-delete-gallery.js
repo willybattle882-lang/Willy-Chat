@@ -1,40 +1,43 @@
 import { createClient } from '@supabase/supabase-js'
 
+function verifyToken(token) {
+  if (!token) return false
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf8')
+    const [prefix, timestamp] = decoded.split(':')
+    if (prefix !== 'admin') return false
+    const TWO_HOURS = 2 * 60 * 60 * 1000
+    return Date.now() - parseInt(timestamp) <= TWO_HOURS
+  } catch {
+    return false
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'DELETE') return res.status(405).json({ error: 'Method not allowed' })
 
   const token = req.headers['x-admin-token']
-  if (!token || token !== process.env.ADMIN_SECRET_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  if (!verifyToken(token)) return res.status(401).json({ error: 'Unauthorized' })
 
   const { photoId, photoUrl } = req.body
   if (!photoId) return res.status(400).json({ error: 'photoId required' })
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  const db = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
     { auth: { persistSession: false } }
   )
 
-  try {
-    // Remove dependências
-    await supabase.from('gallery_likes').delete().eq('photo_id', photoId)
-    await supabase.from('gallery_comments').delete().eq('photo_id', photoId)
+  await db.from('gallery_likes').delete().eq('photo_id', photoId)
+  await db.from('gallery_comments').delete().eq('photo_id', photoId)
 
-    // Remove foto da tabela
-    const { error } = await supabase.from('gallery_photos').delete().eq('id', photoId)
-    if (error) throw error
+  const { error } = await db.from('gallery_photos').delete().eq('id', photoId)
+  if (error) return res.status(500).json({ error: error.message })
 
-    // Remove arquivo do storage (opcional)
-    if (photoUrl) {
-      const fileName = photoUrl.split('/').pop()
-      if (fileName) await supabase.storage.from('PHOTOS').remove([fileName])
-    }
-
-    return res.status(200).json({ success: true })
-  } catch (err) {
-    console.error('Delete error:', err)
-    return res.status(500).json({ error: err.message })
+  if (photoUrl) {
+    const fileName = photoUrl.split('/PHOTOS/')[1] || photoUrl.split('/').pop()
+    await db.storage.from('PHOTOS').remove([fileName])
   }
+
+  return res.status(200).json({ success: true })
 }
