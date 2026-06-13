@@ -57,8 +57,11 @@ function resolveConfirm(val) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(id).classList.add('active')
-  if (id === 'screen-photo-detail') enableKeyboardNavigation()
-  else disableKeyboardNavigation()
+  if (id === 'screen-photo-detail') {
+    enableKeyboardNavigation()
+  } else {
+    disableKeyboardNavigation()
+  }
 }
 
 function enableKeyboardNavigation() {
@@ -150,11 +153,7 @@ async function uploadPhoto() {
   localStorage.setItem('my_chat_code', code)
 
   if (galleryConsent) {
-    await db.from('gallery_photos').insert({ 
-      profile_id: myProfile.id, 
-      photo_url: photoUrl,
-      created_at: new Date().toISOString()
-    })
+    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: photoUrl })
   }
 
   document.getElementById('profile-code-display').textContent = code
@@ -191,16 +190,12 @@ async function giveGalleryConsent() {
   await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
   const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
   if (!existing) {
-    await db.from('gallery_photos').insert({ 
-      profile_id: myProfile.id, 
-      photo_url: myProfile.photo_url,
-      created_at: new Date().toISOString()
-    })
+    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
   }
   enterQueue()
 }
 
-// ========== PROFILE STATS (com botões Join/Remove) ==========
+// ========== PROFILE STATS ==========
 async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
 
@@ -210,7 +205,6 @@ async function loadProfileStats(profile) {
     .maybeSingle()
 
   const joinBtn = document.getElementById('btn-join-hall')
-  const removeBtn = document.getElementById('btn-remove-hall')
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
@@ -218,14 +212,12 @@ async function loadProfileStats(profile) {
     document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
     document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
     if (joinBtn) joinBtn.style.display = 'none'
-    if (removeBtn) removeBtn.style.display = 'block'
   } else {
     document.getElementById('stats-wins').textContent = '—'
     document.getElementById('stats-losses').textContent = '—'
     document.getElementById('stats-champ').textContent = '—'
     document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
     if (joinBtn) joinBtn.style.display = 'block'
-    if (removeBtn) removeBtn.style.display = 'none'
   }
 
   showScreen('screen-profile-stats')
@@ -236,129 +228,56 @@ async function joinHallFromStats() {
   await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
   const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
   if (!existing) {
-    await db.from('gallery_photos').insert({ 
-      profile_id: myProfile.id, 
-      photo_url: myProfile.photo_url,
-      created_at: new Date().toISOString()
-    })
+    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
   }
+  const joinBtn = document.getElementById('btn-join-hall')
+  if (joinBtn) joinBtn.style.display = 'none'
   await loadProfileStats(myProfile)
 }
 
-async function removeFromHall() {
-  if (!myProfile) return
-
-  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? All likes and comments will be lost forever.')
-  if (!confirmed) return
-
-  // Buscar o ID da foto na galeria associada a este perfil
-  const { data: galleryPhoto, error: fetchError } = await db
-    .from('gallery_photos')
-    .select('id')
-    .eq('profile_id', myProfile.id)
-    .maybeSingle()
-
-  if (fetchError) {
-    console.error('Erro ao buscar foto:', fetchError)
-    alert('Could not find your photo in the Hall of Fame.')
-    return
-  }
-
-  if (!galleryPhoto) {
-    alert('Your photo is not in the Hall of Fame.')
-    return
-  }
-
-  try {
-    // --- CÓDIGO CORRIGIDO PARA EVITAR CORS ---
-    // 1. Deleta a foto usando a API REST (esta é a linha que causava o erro)
-    const { error: deleteError } = await db
-      .from('gallery_photos')
-      .delete()
-      .eq('id', galleryPhoto.id)
-
-    if (deleteError) throw deleteError
-
-    // 2. Atualiza o consentimento no perfil
-    await db.from('chat_profiles').update({ gallery_consent: false }).eq('id', myProfile.id)
-
-    alert('✅ Your photo has been removed from the Hall of Fame.')
-    await loadProfileStats(myProfile)
-
-  } catch (err) {
-    console.error('Erro ao remover da galeria:', err)
-    alert('❌ Failed to remove. Check the console for details.')
-  }
-}
-
-// ========== FILA (MATCHING) ==========
+// ========== FILA ==========
 async function enterQueue() {
   if (isMatching) return
   isMatching = true
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
-  // Remove o próprio perfil da fila antes de reinserir (evita duplicatas)
-  await db.from('chat_waiting_queue').delete().eq('profile_id', myProfile.id)
-
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
-  await db.from('chat_waiting_queue').insert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
+  await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
   matchPollInterval = setInterval(async () => {
-    // 1) Já existe conversa ativa?
-    const { data: existingConv } = await db.from('chat_conversations')
+    const { data: conv } = await db.from('chat_conversations')
       .select('*')
       .or(`profile1_id.eq.${myProfile.id},profile2_id.eq.${myProfile.id}`)
       .is('ended_at', null)
       .maybeSingle()
-    if (existingConv) {
+
+    if (conv) {
       clearInterval(matchPollInterval)
-      const partnerId = existingConv.profile1_id === myProfile.id ? existingConv.profile2_id : existingConv.profile1_id
-      await startChat(existingConv, partnerId)
+      const partnerId = conv.profile1_id === myProfile.id ? conv.profile2_id : conv.profile1_id
+      await startChat(conv, partnerId)
       return
     }
 
-    // 2) Buscar fila
     const { data: queue } = await db.from('chat_waiting_queue')
-      .select('profile_id')
+      .select('profile_id, joined_at')
       .order('joined_at', { ascending: true })
-      .limit(5)
+      .limit(2)
 
     if (!queue || queue.length < 2) return
+    const p1 = queue[0].profile_id
+    const p2 = queue[1].profile_id
+    if (myProfile.id !== p1 && myProfile.id !== p2) return
+    if (myProfile.id !== Math.min(p1, p2)) return
 
-    const others = queue.filter(q => q.profile_id !== myProfile.id)
-    if (others.length === 0) return
+    const { data: conv2, error } = await db.from('chat_conversations')
+      .insert({ profile1_id: p1, profile2_id: p2 })
+      .select().single()
 
-    const partner = others[0]
-    const partnerId = partner.profile_id
+    if (error || !conv2) return
 
-    // Verifica se o parceiro ainda está waiting e online
-    const { data: partnerProfile } = await db.from('chat_profiles')
-      .select('waiting, online')
-      .eq('id', partnerId)
-      .single()
-    if (!partnerProfile || !partnerProfile.waiting || !partnerProfile.online) {
-      await db.from('chat_waiting_queue').delete().eq('profile_id', partnerId)
-      return
-    }
-
-    // 3) Criar conversa
-    const { data: newConv, error: createError } = await db.from('chat_conversations')
-      .insert({ profile1_id: myProfile.id, profile2_id: partnerId })
-      .select()
-      .single()
-
-    if (createError) {
-      console.error('Erro criar conversa:', createError)
-      return
-    }
-
-    // 4) Limpar fila e atualizar status
-    await db.from('chat_waiting_queue').delete().in('profile_id', [myProfile.id, partnerId])
-    await db.from('chat_profiles').update({ waiting: false, current_conversation_id: newConv.id }).in('id', [myProfile.id, partnerId])
-
-    clearInterval(matchPollInterval)
-    await startChat(newConv, partnerId)
+    await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
+    await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
   }, 2000)
 }
 
@@ -501,12 +420,7 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 // ========== HALL OF FAME ==========
 async function loadHallOfFame() {
   showScreen('screen-hall')
-  
-  // Ordena por created_at decrescente (mais recentes primeiro)
-  const { data: photos } = await db.from('gallery_photos')
-    .select('id, photo_url, votes, created_at')
-    .order('created_at', { ascending: false })
-  
+  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('votes', { ascending: false })
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
 
@@ -530,8 +444,8 @@ async function loadHallOfFame() {
 
   grid.innerHTML = galleryPhotosList.map((p, idx) => `
     <div style="display:flex;flex-direction:column;width:100%;min-width:0;cursor:pointer;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
-      <div style="width:100%;aspect-ratio:1/1;background:var(--surface2);display:flex;align-items:center;justify-content:center;">
-        <img src="${p.photo_url}" style="width:100%;height:100%;object-fit:contain;" loading="lazy" />
+      <div style="width:100%;padding-top:100%;position:relative;background:var(--surface2);">
+        <img src="${p.photo_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--surface2);" loading="lazy" />
       </div>
       <div style="padding:0.35rem 0.5rem;display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;">
         <span style="color:var(--accent);font-weight:600;">❤️ ${likeMap[p.id] || 0}</span>
@@ -594,7 +508,6 @@ async function toggleLike() {
   document.getElementById('detail-like-btn').className = `like-btn ${myLikedPhotos.includes(currentPhotoId) ? 'liked' : ''}`
 }
 
-// ========== COMENTÁRIOS ==========
 async function loadComments(photoId) {
   const { data: comments } = await db.from('gallery_comments')
     .select('*').eq('photo_id', photoId).is('reply_to', null).order('created_at', { ascending: true })
@@ -633,18 +546,8 @@ async function submitComment() {
   const text = input.value.trim()
   if (!text || !currentPhotoId) return
   input.value = ''
-  try {
-    const { error } = await db.from('gallery_comments').insert({ 
-      photo_id: currentPhotoId, 
-      content: text, 
-      alias: randomAlias() 
-    })
-    if (error) throw error
-    await loadComments(currentPhotoId)
-  } catch (err) {
-    console.error('Erro ao comentar:', err)
-    alert('Não foi possível adicionar o comentário. Tente novamente.')
-  }
+  await db.from('gallery_comments').insert({ photo_id: currentPhotoId, content: text, alias: randomAlias() })
+  await loadComments(currentPhotoId)
 }
 
 function openReplyModal(commentId, previewText) {
@@ -663,18 +566,8 @@ async function submitReply() {
   if (!text || !replyTargetId || !currentPhotoId) return
   input.value = ''
   closeReplyModal()
-  try {
-    await db.from('gallery_comments').insert({ 
-      photo_id: currentPhotoId, 
-      content: text, 
-      alias: randomAlias(), 
-      reply_to: replyTargetId 
-    })
-    await loadComments(currentPhotoId)
-  } catch (err) {
-    console.error('Erro ao responder:', err)
-    alert('Não foi possível enviar a resposta.')
-  }
+  await db.from('gallery_comments').insert({ photo_id: currentPhotoId, content: text, alias: randomAlias(), reply_to: replyTargetId })
+  await loadComments(currentPhotoId)
 }
 
 // ========== GALLERY BATTLE ==========
@@ -747,21 +640,11 @@ async function galleryVote(side) {
   document.getElementById('battle-left').onclick = null
   document.getElementById('battle-right').onclick = null
 
-  try {
-    const res = await fetch('/api/gallery-vote', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ winnerId: winner.id, loserId: loser.id })
-    })
-    if (!res.ok) throw new Error('Falha no voto')
-  } catch (err) {
-    console.error('Erro ao votar:', err)
-    document.getElementById('battle-status').textContent = 'Error recording vote. Try again.'
-    setTimeout(() => loadBattlePair(), 1000)
-    return
-  }
-
-  // Atualiza os objetos locais
+  await fetch('/api/gallery-vote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ winnerId: winner.id, loserId: loser.id })
+  })
   winner.votes = (winner.votes || 0) + 1
   loser.losses = (loser.losses || 0) + 1
 
@@ -785,14 +668,13 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  try {
-    await fetch('/api/gallery-championship', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photoId: photo.id })
-    })
-    photo.championships = (photo.championships || 0) + 1
-  } catch (err) { console.error(err) }
+  const res = await fetch('/api/gallery-championship', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId: photo.id })
+  })
+  const data = await res.json()
+  photo.championships = data.championships || (photo.championships || 0) + 1
   document.getElementById('champion-img').src = photo.photo_url
   document.getElementById('champion-votes').textContent = photo.votes || 0
   showScreen('screen-champion')
@@ -849,11 +731,7 @@ async function uploadToGallery() {
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
   const photoUrl = urlData.publicUrl
 
-  const { error: dbErr } = await db.from('gallery_photos').insert({ 
-    photo_url: photoUrl, 
-    votes: 0,
-    created_at: new Date().toISOString()
-  })
+  const { error: dbErr } = await db.from('gallery_photos').insert({ photo_url: photoUrl, votes: 0 })
   if (dbErr) { status.textContent = 'Error saving photo. Try again.'; btn.disabled = false; return }
 
   status.textContent = '✅ Photo added to the Hall of Fame!'
@@ -903,6 +781,7 @@ async function adminLogin() {
 }
 
 async function loadAdminPanel() {
+  // Verifica token antes de qualquer coisa
   const token = adminToken || sessionStorage.getItem('admin_token')
   if (!token) { showScreen('screen-admin-login'); return }
 
@@ -912,10 +791,13 @@ async function loadAdminPanel() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token })
     })
-    if (!verifyRes.ok) throw new Error()
+    if (!verifyRes.ok) {
+      sessionStorage.removeItem('admin_token')
+      adminToken = null
+      showScreen('screen-admin-login')
+      return
+    }
   } catch {
-    sessionStorage.removeItem('admin_token')
-    adminToken = null
     showScreen('screen-admin-login')
     return
   }
@@ -953,8 +835,8 @@ async function switchAdminTab(tab) {
     galleryDiv.innerHTML = '<p class="status-msg">Loading gallery...</p>'
 
     const { data: galleryPhotos } = await db.from('gallery_photos')
-      .select('id, photo_url, votes, championships, created_at')
-      .order('created_at', { ascending: false })
+      .select('id, photo_url, votes, championships')
+      .order('id', { ascending: false })
 
     if (!galleryPhotos || galleryPhotos.length === 0) {
       galleryDiv.innerHTML = '<p class="status-msg">No photos in gallery.</p>'
@@ -1042,6 +924,7 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
     }
     btn.closest('.admin-gallery-card').remove()
   } catch (e) {
+    console.error('adminDeleteGalleryPhoto error:', e)
     btn.textContent = '❌ Error'
     btn.disabled = false
   }
