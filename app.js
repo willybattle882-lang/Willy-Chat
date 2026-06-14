@@ -462,10 +462,17 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 // ========== HALL OF FAME ==========
 async function loadHallOfFame() {
   showScreen('screen-hall')
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('created_at', { ascending: false }).limit(50)
+  
+  // Busca todas as fotos, ordenadas da mais recente para a mais antiga
+  const { data: photos } = await db.from('gallery_photos')
+    .select('id, photo_url, votes')
+    .order('created_at', { ascending: false })
+    // .limit(50)  // REMOVIDO - agora exibe todas as fotos
+
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
 
+  // Aplica estilos inline para o grid (3 colunas)
   grid.style.display = 'grid'
   grid.style.gridTemplateColumns = 'repeat(3, 1fr)'
   grid.style.gap = '12px'
@@ -478,12 +485,14 @@ async function loadHallOfFame() {
     return
   }
 
+  // Busca contagens de likes e comentários para cada foto
   const { data: likes } = await db.from('gallery_likes').select('photo_id')
   const { data: comments } = await db.from('gallery_comments').select('photo_id').is('reply_to', null)
   const likeMap = {}, commentMap = {}
   ;(likes || []).forEach(l => { likeMap[l.photo_id] = (likeMap[l.photo_id] || 0) + 1 })
   ;(comments || []).forEach(c => { commentMap[c.photo_id] = (commentMap[c.photo_id] || 0) + 1 })
 
+  // Renderiza o grid
   grid.innerHTML = galleryPhotosList.map((p, idx) => `
     <div style="display:flex;flex-direction:column;width:100%;min-width:0;cursor:pointer;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
       <div style="width:100%;padding-top:100%;position:relative;background:var(--surface2);">
