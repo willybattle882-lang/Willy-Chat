@@ -904,15 +904,18 @@ async function loadAdminPanel() {
 
   if (!document.getElementById('admin-tabs')) {
     container.innerHTML = `
-      <div id="admin-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-        <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery Photos</button>
-        <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Conversations</button>
+      <div id="admin-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery</button>
+        <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Chats</button>
+        <button id="admin-tab-cleanup" class="btn-main secondary" style="flex:1;border-color:var(--accent);color:var(--accent)">🗑️ Cleanup</button>
       </div>
       <div id="admin-gallery-section"></div>
       <div id="admin-conv-section"></div>
+      <div id="admin-cleanup-section"></div>
     `
     document.getElementById('admin-tab-gallery').onclick = () => switchAdminTab('gallery')
     document.getElementById('admin-tab-conv').onclick = () => switchAdminTab('conversations')
+    document.getElementById('admin-tab-cleanup').onclick = () => switchAdminTab('cleanup')
   }
   await switchAdminTab(adminActiveTab)
 }
@@ -954,6 +957,24 @@ async function switchAdminTab(tab) {
         `).join('')}
       </div>
     `
+  } else if (tab === 'cleanup') {
+    galleryDiv.style.display = 'none'
+    convDiv.style.display = 'none'
+    document.getElementById('admin-cleanup-section').style.display = 'block'
+    document.getElementById('admin-tab-cleanup').style.background = 'var(--accent)'
+    btnGallery.style.background = ''
+    btnConv.style.background = ''
+
+    const cleanupDiv = document.getElementById('admin-cleanup-section')
+    cleanupDiv.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;text-align:center;display:flex;flex-direction:column;gap:1rem;">
+        <h3 style="font-family:'Black Han Sans',sans-serif;color:#fff">🗑️ Storage Cleanup</h3>
+        <p style="color:var(--muted);font-size:0.85rem">Deletes all offline chat profiles that are NOT in the Hall of Fame, along with their photos, conversations and messages.</p>
+        <button class="btn-main" id="btn-run-cleanup" onclick="runCleanup()" style="background:var(--accent)">Run Cleanup</button>
+        <p id="cleanup-result" class="status-msg"></p>
+      </div>
+    `
+    return
   } else {
     galleryDiv.style.display = 'none'
     convDiv.style.display = 'block'
@@ -1024,6 +1045,29 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
     console.error('adminDeleteGalleryPhoto error:', e)
     btn.textContent = '❌ Error'
     btn.disabled = false
+  }
+}
+
+async function runCleanup() {
+  const btn = document.getElementById('btn-run-cleanup')
+  const result = document.getElementById('cleanup-result')
+  btn.disabled = true
+  btn.textContent = 'Running...'
+  result.textContent = ''
+
+  const token = adminToken || sessionStorage.getItem('admin_token')
+  try {
+    const res = await fetch('/api/admin-cleanup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': token }
+    })
+    const data = await res.json()
+    result.textContent = data.message || `✅ Done`
+    btn.textContent = '✅ Done'
+  } catch (e) {
+    result.textContent = '❌ Error running cleanup'
+    btn.disabled = false
+    btn.textContent = 'Run Cleanup'
   }
 }
 
