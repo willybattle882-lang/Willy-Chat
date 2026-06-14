@@ -1,29 +1,31 @@
 import { createClient } from '@supabase/supabase-js'
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end()
-  const { winnerId, loserId } = req.body
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+  const { winnerId, loserId } = req.body
+  if (!winnerId || !loserId) return res.status(400).json({ error: 'winnerId and loserId required' })
+  if (winnerId === loserId) return res.status(400).json({ error: 'winnerId and loserId must be different' })
+
+  const db = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
     { auth: { persistSession: false } }
   )
 
-  try {
-    // Incrementa votes do vencedor e losses do perdedor
-    await supabase.rpc('increment_vote', { photo_id: winnerId })
-    await supabase.rpc('increment_loss', { photo_id: loserId })
-    return res.status(200).json({ success: true })
-  } catch (err) {
-    // Fallback: update direto se a RPC não existir
-    try {
-      await supabase.from('gallery_photos').update({ votes: supabase.raw('votes + 1') }).eq('id', winnerId)
-      await supabase.from('gallery_photos').update({ losses: supabase.raw('losses + 1') }).eq('id', loserId)
-      return res.status(200).json({ success: true })
-    } catch (err2) {
-      console.error(err2)
-      return res.status(500).json({ error: err2.message })
-    }
-  }
+  // Busca valores atuais dos dois em paralelo
+  const [{ data: winner }, { data: loser }] = await Promise.all([
+    db.from('gallery_photos').select('votes').eq('id', winnerId).single(),
+    db.from('gallery_photos').select('losses').eq('id', loserId).single()
+  ])
+
+  if (!winner || !loser) return res.status(404).json({ error: 'Photo not found' })
+
+  // Atualiza em paralelo
+  await Promise.all([
+    db.from('gallery_photos').update({ votes: (winner.votes || 0) + 1 }).eq('id', winnerId),
+    db.from('gallery_photos').update({ losses: (loser.losses || 0) + 1 }).eq('id', loserId)
+  ])
+
+  return res.status(200).json({ success: true })
 }
