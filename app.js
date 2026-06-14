@@ -88,6 +88,38 @@ function showResumeScreen() {
   showScreen('screen-resume')
 }
 
+
+// ========== COMPRESSÃO DE IMAGEM ==========
+function compressImage(file, maxWidth = 800, quality = 0.75) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = Math.round(height * maxWidth / width)
+          width = maxWidth
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
+        }, 'image/jpeg', quality)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 // ========== UPLOAD ==========
 function updateSendBtn() {
   const hasFile = document.getElementById('file-input').files.length > 0
@@ -127,9 +159,10 @@ async function uploadPhoto() {
   status.textContent = 'Uploading...'
   document.getElementById('btn-send').disabled = true
 
-  const ext = file.name.split('.').pop()
-  const fileName = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, file)
+  // Comprime antes de fazer upload
+  const compressed = await compressImage(file)
+  const fileName = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, compressed)
   if (uploadErr) { status.textContent = 'Upload failed. Try again.'; document.getElementById('btn-send').disabled = false; return }
 
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
@@ -246,6 +279,11 @@ async function enterQueue() {
   if (matchPollInterval) clearInterval(matchPollInterval)
 
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
+  
+  // Limpa fantasmas da fila antes de entrar
+  await db.from('chat_waiting_queue').delete().not('profile_id', 'eq', myProfile.id)
+    .lt('joined_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
+  
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
 
   matchPollInterval = setInterval(async () => {
@@ -263,7 +301,8 @@ async function enterQueue() {
     }
 
     const { data: queue } = await db.from('chat_waiting_queue')
-      .select('profile_id, joined_at')
+      .select('profile_id, joined_at, chat_profiles!inner(online)')
+      .eq('chat_profiles.online', true)
       .order('joined_at', { ascending: true })
       .limit(2)
 
@@ -423,7 +462,7 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 // ========== HALL OF FAME ==========
 async function loadHallOfFame() {
   showScreen('screen-hall')
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('created_at', { ascending: false })
+  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('created_at', { ascending: false }).limit(50)
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
 
@@ -726,9 +765,10 @@ async function uploadToGallery() {
   status.textContent = 'Uploading...'
   btn.disabled = true
 
-  const ext = file.name.split('.').pop()
-  const fileName = `gallery_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, file)
+  // Comprime antes de fazer upload
+  const compressed = await compressImage(file)
+  const fileName = `gallery_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, compressed)
   if (uploadErr) { status.textContent = 'Upload failed. Try again.'; btn.disabled = false; return }
 
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
@@ -864,15 +904,18 @@ async function loadAdminPanel() {
 
   if (!document.getElementById('admin-tabs')) {
     container.innerHTML = `
-      <div id="admin-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-        <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery Photos</button>
-        <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Conversations</button>
+      <div id="admin-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery</button>
+        <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Chats</button>
+        <button id="admin-tab-cleanup" class="btn-main secondary" style="flex:1;border-color:var(--accent);color:var(--accent)">🗑️ Cleanup</button>
       </div>
       <div id="admin-gallery-section"></div>
       <div id="admin-conv-section"></div>
+      <div id="admin-cleanup-section"></div>
     `
     document.getElementById('admin-tab-gallery').onclick = () => switchAdminTab('gallery')
     document.getElementById('admin-tab-conv').onclick = () => switchAdminTab('conversations')
+    document.getElementById('admin-tab-cleanup').onclick = () => switchAdminTab('cleanup')
   }
   await switchAdminTab(adminActiveTab)
 }
@@ -914,6 +957,24 @@ async function switchAdminTab(tab) {
         `).join('')}
       </div>
     `
+  } else if (tab === 'cleanup') {
+    galleryDiv.style.display = 'none'
+    convDiv.style.display = 'none'
+    document.getElementById('admin-cleanup-section').style.display = 'block'
+    document.getElementById('admin-tab-cleanup').style.background = 'var(--accent)'
+    btnGallery.style.background = ''
+    btnConv.style.background = ''
+
+    const cleanupDiv = document.getElementById('admin-cleanup-section')
+    cleanupDiv.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;text-align:center;display:flex;flex-direction:column;gap:1rem;">
+        <h3 style="font-family:'Black Han Sans',sans-serif;color:#fff">🗑️ Storage Cleanup</h3>
+        <p style="color:var(--muted);font-size:0.85rem">Deletes all offline chat profiles that are NOT in the Hall of Fame, along with their photos, conversations and messages.</p>
+        <button class="btn-main" id="btn-run-cleanup" onclick="runCleanup()" style="background:var(--accent)">Run Cleanup</button>
+        <p id="cleanup-result" class="status-msg"></p>
+      </div>
+    `
+    return
   } else {
     galleryDiv.style.display = 'none'
     convDiv.style.display = 'block'
@@ -984,6 +1045,29 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
     console.error('adminDeleteGalleryPhoto error:', e)
     btn.textContent = '❌ Error'
     btn.disabled = false
+  }
+}
+
+async function runCleanup() {
+  const btn = document.getElementById('btn-run-cleanup')
+  const result = document.getElementById('cleanup-result')
+  btn.disabled = true
+  btn.textContent = 'Running...'
+  result.textContent = ''
+
+  const token = adminToken || sessionStorage.getItem('admin_token')
+  try {
+    const res = await fetch('/api/admin-cleanup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': token }
+    })
+    const data = await res.json()
+    result.textContent = data.message || `✅ Done`
+    btn.textContent = '✅ Done'
+  } catch (e) {
+    result.textContent = '❌ Error running cleanup'
+    btn.disabled = false
+    btn.textContent = 'Run Cleanup'
   }
 }
 
