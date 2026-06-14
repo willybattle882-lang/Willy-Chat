@@ -21,11 +21,11 @@
       <button class="btn-main" onclick="startUpload()">💬 Chat anonymously</button>
       <button class="btn-main secondary" onclick="startGalleryBattle()">⚔️ Battle</button>
       <button class="btn-main ghost" onclick="loadHallOfFame()">🏆 Hall of Fame</button>
+      <button class="btn-main ghost" onclick="showResumeScreen()">🔗 I have a code</button>
     </div>
     <div id="online-count" class="total-label"></div>
     <footer class="site-footer">
       <a href="#" onclick="showScreen('screen-privacy')">Privacy</a> ·
-      <a href="#" onclick="showResumeScreen()">I have a code</a> ·
       <a href="#" onclick="showAdminLogin()">Admin</a>
     </footer>
   </div>
@@ -79,7 +79,7 @@
     </div>
   </div>
 
-  <!-- GALLERY CONSENT (para usuários retornando) -->
+  <!-- GALLERY CONSENT -->
   <div id="screen-gallery-consent" class="screen">
     <button class="btn-back" onclick="enterQueue()">← Skip</button>
     <div class="card">
@@ -139,7 +139,7 @@
     <div id="hall-grid" class="hall-grid"></div>
   </div>
 
-  <!-- PHOTO DETAIL (curtidas + comentários) -->
+  <!-- PHOTO DETAIL -->
   <div id="screen-photo-detail" class="screen photo-detail-screen">
     <button class="btn-back" onclick="loadHallOfFame()">← Back</button>
     <div class="photo-detail-wrap">
@@ -147,8 +147,8 @@
         <img id="detail-photo-img" />
       </div>
       <div class="photo-detail-nav">
-        <button id="detail-prev-btn" class="btn-next" style="display: none;" onclick="navigatePhoto(-1)">◀ Previous</button>
-        <button id="detail-next-btn" class="btn-next" style="display: none;" onclick="navigatePhoto(1)">Next ▶</button>
+        <button id="detail-prev-btn" class="btn-next" style="display:none" onclick="navigatePhoto(-1)">◀ Previous</button>
+        <button id="detail-next-btn" class="btn-next" style="display:none" onclick="navigatePhoto(1)">Next ▶</button>
       </div>
       <div class="photo-detail-info">
         <div class="detail-likes-row">
@@ -236,7 +236,7 @@
     </div>
   </div>
 
-  <!-- PROFILE STATS (com botão de remover do Hall) -->
+  <!-- PROFILE STATS -->
   <div id="screen-profile-stats" class="screen">
     <button class="btn-back" onclick="showScreen('screen-resume')">← Back</button>
     <div class="card wide">
@@ -261,8 +261,11 @@
       <p id="stats-gallery-note" class="sub"></p>
       <button class="btn-main" onclick="enterQueue()">💬 Find a partner</button>
       <button id="btn-join-hall" class="btn-main secondary" onclick="joinHallFromStats()" style="display:none">🏆 Join Hall of Fame</button>
-      <button id="btn-remove-hall" class="btn-main secondary" onclick="removeFromHall()" style="display:none; background:#ff3c3c;">🗑️ Remove from Hall of Fame</button>
+      <button id="btn-remove-hall" class="btn-main" onclick="removeFromHall()" style="display:none; background:#ff9f1c;">🖼️ Remove from Hall of Fame</button>
       <button class="btn-main ghost" onclick="showScreen('screen-home')">🏠 Home</button>
+      <div style="width:100%; border-top:1px solid var(--border); padding-top:0.75rem; margin-top:0.25rem;">
+        <button class="btn-main" onclick="userDeleteAll()" style="background:transparent; border:1.5px solid var(--accent); color:var(--accent); font-size:0.85rem;">🗑️ Delete my account & photo</button>
+      </div>
     </div>
   </div>
 
@@ -277,9 +280,9 @@
       <h3>Profile code</h3>
       <p>Your 6-digit code is the only way to recover your profile. We do not store any information that links the code to your identity.</p>
       <h3>Hall of Fame</h3>
-      <p>Photos added to the Hall of Fame are publicly visible to anyone visiting the site. You must explicitly consent before your photo is added. You can request removal via the admin contact or directly from your stats page.</p>
+      <p>Photos added to the Hall of Fame are publicly visible to anyone visiting the site. You must explicitly consent before your photo is added. You can request removal directly from your stats page.</p>
       <h3>Consent & removal</h3>
-      <p>You must be 18+. You consent to your photo being shown anonymously to matched users only, unless you opt into the Hall of Fame.</p>
+      <p>You must be 18+. You can delete your profile and photo at any time from your stats page.</p>
       <button class="btn-main secondary" onclick="showScreen('screen-home')" style="margin-top:1rem">← Back</button>
     </div>
   </div>
@@ -317,7 +320,7 @@
   <div id="reply-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:999; align-items:center; justify-content:center;">
     <div class="modal-box">
       <p id="reply-to-text" class="reply-preview"></p>
-      <input type="text" id="reply-input" class="input-field" placeholder="Your reply..." maxlength="300" 
+      <input type="text" id="reply-input" class="input-field" placeholder="Your reply..." maxlength="300"
         onkeydown="if(event.key==='Enter') submitReply()" />
       <div style="display:flex; gap:0.75rem;">
         <button class="btn-main secondary" style="flex:1" onclick="closeReplyModal()">Cancel</button>
