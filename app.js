@@ -205,6 +205,7 @@ async function loadProfileStats(profile) {
     .maybeSingle()
 
   const joinBtn = document.getElementById('btn-join-hall')
+  const removeBtn = document.getElementById('btn-remove-hall')
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
@@ -212,12 +213,14 @@ async function loadProfileStats(profile) {
     document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
     document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
     if (joinBtn) joinBtn.style.display = 'none'
+    if (removeBtn) removeBtn.style.display = 'block'
   } else {
     document.getElementById('stats-wins').textContent = '—'
     document.getElementById('stats-losses').textContent = '—'
     document.getElementById('stats-champ').textContent = '—'
     document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
     if (joinBtn) joinBtn.style.display = 'block'
+    if (removeBtn) removeBtn.style.display = 'none'
   }
 
   showScreen('screen-profile-stats')
@@ -740,6 +743,60 @@ async function uploadToGallery() {
     else if (galleryUploadReturnScreen === 'screen-battle') startGalleryBattle()
     else showScreen(galleryUploadReturnScreen)
   }, 1500)
+}
+
+
+// ========== USER DELETE ==========
+async function removeFromHall() {
+  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? Your chat profile will remain.')
+  if (!confirmed) return
+
+  const code = localStorage.getItem('my_chat_code')
+  if (!code) return
+
+  const btn = document.getElementById('btn-remove-hall')
+  btn.disabled = true
+  btn.textContent = 'Removing...'
+
+  const res = await fetch('/api/user-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, action: 'remove_gallery' })
+  })
+
+  if (res.ok) {
+    btn.style.display = 'none'
+    document.getElementById('btn-join-hall').style.display = 'block'
+    document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
+    document.getElementById('stats-wins').textContent = '—'
+    document.getElementById('stats-losses').textContent = '—'
+    document.getElementById('stats-champ').textContent = '—'
+  } else {
+    btn.textContent = '❌ Error'
+    btn.disabled = false
+  }
+}
+
+async function userDeleteAll() {
+  const confirmed = await showConfirm('Delete EVERYTHING? Your photo, profile and chat history will be permanently removed. This cannot be undone.')
+  if (!confirmed) return
+
+  const code = localStorage.getItem('my_chat_code')
+  if (!code) return
+
+  const res = await fetch('/api/user-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, action: 'delete_all' })
+  })
+
+  if (res.ok) {
+    localStorage.removeItem('my_chat_code')
+    myProfile = null
+    showHome()
+  } else {
+    alert('Error deleting account. Please try again.')
+  }
 }
 
 // ========== ADMIN ==========
