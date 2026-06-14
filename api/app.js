@@ -88,6 +88,38 @@ function showResumeScreen() {
   showScreen('screen-resume')
 }
 
+
+// ========== COMPRESSÃO DE IMAGEM ==========
+function compressImage(file, maxWidth = 800, quality = 0.75) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = Math.round(height * maxWidth / width)
+          width = maxWidth
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, width, height)
+
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
+        }, 'image/jpeg', quality)
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 // ========== UPLOAD ==========
 function updateSendBtn() {
   const hasFile = document.getElementById('file-input').files.length > 0
@@ -127,9 +159,10 @@ async function uploadPhoto() {
   status.textContent = 'Uploading...'
   document.getElementById('btn-send').disabled = true
 
-  const ext = file.name.split('.').pop()
-  const fileName = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, file)
+  // Comprime antes de fazer upload
+  const compressed = await compressImage(file)
+  const fileName = `chat_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, compressed)
   if (uploadErr) { status.textContent = 'Upload failed. Try again.'; document.getElementById('btn-send').disabled = false; return }
 
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
@@ -429,7 +462,7 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 // ========== HALL OF FAME ==========
 async function loadHallOfFame() {
   showScreen('screen-hall')
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('created_at', { ascending: false })
+  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('created_at', { ascending: false }).limit(50)
   galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
 
@@ -732,9 +765,10 @@ async function uploadToGallery() {
   status.textContent = 'Uploading...'
   btn.disabled = true
 
-  const ext = file.name.split('.').pop()
-  const fileName = `gallery_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, file)
+  // Comprime antes de fazer upload
+  const compressed = await compressImage(file)
+  const fileName = `gallery_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+  const { error: uploadErr } = await db.storage.from('PHOTOS').upload(fileName, compressed)
   if (uploadErr) { status.textContent = 'Upload failed. Try again.'; btn.disabled = false; return }
 
   const { data: urlData } = db.storage.from('PHOTOS').getPublicUrl(fileName)
