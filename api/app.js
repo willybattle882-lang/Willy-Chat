@@ -1,7 +1,5 @@
 const SUPABASE_URL = 'https://ozyligilnzuhnkkobgxc.supabase.co'
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96eWxpZ2lsbnp1aG5ra29iZ3hjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2ODkyNjMsImV4cCI6MjA5NjI2NTI2M30.H64U-LWB_arJkS_73sMVF-1myh3VhnFnyVCtFjlEDUg'
-const ADMIN_HASH = 'd5764cde6afed69a3f868d9341685ca39cfd57ab0c7d7d6f7ed60be03c705255'
-
 const { createClient } = supabase
 const db = createClient(SUPABASE_URL, SUPABASE_ANON)
 
@@ -15,10 +13,17 @@ let confirmResolver = null
 let autoNextTimeout = null
 let isMatching = false
 
+// Admin
+let adminToken = null
+let adminActiveTab = 'gallery'
+
 // Hall of Fame
 let currentPhotoId = null
 let myLikedPhotos = JSON.parse(localStorage.getItem('liked_photos') || '[]')
 let replyTargetId = null
+let galleryPhotosList = []
+let currentPhotoIndex = -1
+let keyboardListenerActive = false
 
 // Battle
 let battleLeft = null
@@ -37,12 +42,6 @@ function randomAlias() {
   return `${adj} ${noun}`
 }
 
-// ========== HASH ==========
-async function hashPassword(password) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
 // ========== MODAL ==========
 function showConfirm(msg) {
   document.getElementById('confirm-message').textContent = msg
@@ -58,19 +57,31 @@ function resolveConfirm(val) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(id).classList.add('active')
+  if (id === 'screen-photo-detail') {
+    enableKeyboardNavigation()
+  } else {
+    disableKeyboardNavigation()
+  }
 }
 
-function showHome() {
-  cleanup()
-  showScreen('screen-home')
-  refreshOnlineCount()
+function enableKeyboardNavigation() {
+  if (keyboardListenerActive) return
+  window.addEventListener('keydown', handlePhotoDetailKeydown)
+  keyboardListenerActive = true
+}
+function disableKeyboardNavigation() {
+  if (!keyboardListenerActive) return
+  window.removeEventListener('keydown', handlePhotoDetailKeydown)
+  keyboardListenerActive = false
+}
+function handlePhotoDetailKeydown(e) {
+  if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePhoto(-1) }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); navigatePhoto(1) }
+  else if (e.key === 'Escape') { e.preventDefault(); loadHallOfFame() }
 }
 
-function startUpload() {
-  resetUploadForm()
-  showScreen('screen-upload')
-}
-
+function showHome() { cleanup(); showScreen('screen-home'); refreshOnlineCount() }
+function startUpload() { resetUploadForm(); showScreen('screen-upload') }
 function showResumeScreen() {
   document.getElementById('resume-code-input').value = ''
   document.getElementById('resume-error').textContent = ''
@@ -141,7 +152,6 @@ async function uploadPhoto() {
   myProfile = profile
   localStorage.setItem('my_chat_code', code)
 
-  // Se deu consent, adiciona na galeria
   if (galleryConsent) {
     await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: photoUrl })
   }
@@ -172,15 +182,12 @@ async function resumeWithCode() {
   myProfile = profile
   localStorage.setItem('my_chat_code', code)
   await db.from('chat_profiles').update({ online: true }).eq('id', myProfile.id)
-
-  // Mostra stats do perfil
   await loadProfileStats(profile)
 }
 
 async function giveGalleryConsent() {
   if (!myProfile) return
   await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
-  // Verifica se já está na galeria
   const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
   if (!existing) {
     await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
@@ -191,43 +198,60 @@ async function giveGalleryConsent() {
 // ========== PROFILE STATS ==========
 async function loadProfileStats(profile) {
   document.getElementById('stats-photo').src = profile.photo_url
-  
-  // Busca foto na galeria
-  const { data: galleryPhoto, error: gpError } = await db.from('gallery_photos')
+
+  const { data: galleryPhoto } = await db.from('gallery_photos')
     .select('id, votes, losses, championships')
     .eq('profile_id', profile.id)
     .maybeSingle()
-  
+
+  const joinBtn = document.getElementById('btn-join-hall')
+  const removeBtn = document.getElementById('btn-remove-hall')
 
   if (galleryPhoto) {
     document.getElementById('stats-wins').textContent = galleryPhoto.votes || 0
     document.getElementById('stats-losses').textContent = galleryPhoto.losses || 0
     document.getElementById('stats-champ').textContent = galleryPhoto.championships || 0
     document.getElementById('stats-gallery-note').textContent = 'Your photo is in the Hall of Fame ✅'
+    if (joinBtn) joinBtn.style.display = 'none'
+    if (removeBtn) removeBtn.style.display = 'block'
   } else {
     document.getElementById('stats-wins').textContent = '—'
     document.getElementById('stats-losses').textContent = '—'
     document.getElementById('stats-champ').textContent = '—'
     document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
+    if (joinBtn) joinBtn.style.display = 'block'
+    if (removeBtn) removeBtn.style.display = 'none'
   }
 
   showScreen('screen-profile-stats')
 }
 
+async function joinHallFromStats() {
+  if (!myProfile) return
+  await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
+  const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
+  if (!existing) {
+    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
+  }
+  const joinBtn = document.getElementById('btn-join-hall')
+  if (joinBtn) joinBtn.style.display = 'none'
+  await loadProfileStats(myProfile)
+}
+
 // ========== FILA ==========
 async function enterQueue() {
-  if (isMatching) {
-    console.log('[enterQueue] Já está pareando, ignorando...')
-    return
-  }
+  if (isMatching) return
   isMatching = true
   showScreen('screen-waiting')
   if (matchPollInterval) clearInterval(matchPollInterval)
 
-  console.log('[enterQueue] Atualizando status online e waiting para ID:', myProfile.id)
   await db.from('chat_profiles').update({ waiting: true, online: true }).eq('id', myProfile.id)
+  
+  // Limpa fantasmas da fila antes de entrar
+  await db.from('chat_waiting_queue').delete().not('profile_id', 'eq', myProfile.id)
+    .lt('joined_at', new Date(Date.now() - 3 * 60 * 1000).toISOString())
+  
   await db.from('chat_waiting_queue').upsert({ profile_id: myProfile.id, joined_at: new Date().toISOString() })
-  console.log('[enterQueue] Perfil confirmado na fila')
 
   matchPollInterval = setInterval(async () => {
     const { data: conv } = await db.from('chat_conversations')
@@ -244,32 +268,29 @@ async function enterQueue() {
     }
 
     const { data: queue } = await db.from('chat_waiting_queue')
-      .select('profile_id, joined_at')
+      .select('profile_id, joined_at, chat_profiles!inner(online)')
+      .eq('chat_profiles.online', true)
       .order('joined_at', { ascending: true })
       .limit(2)
 
     if (!queue || queue.length < 2) return
-
     const p1 = queue[0].profile_id
     const p2 = queue[1].profile_id
     if (myProfile.id !== p1 && myProfile.id !== p2) return
     if (myProfile.id !== Math.min(p1, p2)) return
 
-    console.log('[match] Tentando parear', p1, 'com', p2)
     const { data: conv2, error } = await db.from('chat_conversations')
       .insert({ profile1_id: p1, profile2_id: p2 })
       .select().single()
 
     if (error || !conv2) return
 
-    console.log('[match] Conversa criada com sucesso:', conv2.id)
     await db.from('chat_waiting_queue').delete().in('profile_id', [p1, p2])
     await db.from('chat_profiles').update({ waiting: false, current_conversation_id: conv2.id }).in('id', [p1, p2])
   }, 2000)
 }
 
 async function startChat(conv, partnerId) {
-  console.log('[startChat] Iniciando chat com partner:', partnerId)
   const { data: partner } = await db.from('chat_profiles').select('photo_url').eq('id', partnerId).single()
   currentConversation = { id: conv.id, partner_id: partnerId }
 
@@ -408,46 +429,75 @@ async function cancelWaiting() { await cleanup(); myProfile = null; showHome() }
 // ========== HALL OF FAME ==========
 async function loadHallOfFame() {
   showScreen('screen-hall')
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('votes', { ascending: false })
+  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes').order('created_at', { ascending: false })
+  galleryPhotosList = photos || []
   const grid = document.getElementById('hall-grid')
-  if (!photos || photos.length === 0) { grid.innerHTML = '<p style="color:var(--muted);text-align:center;grid-column:1/-1">No photos yet.</p>'; return }
 
-  // Busca contagem de likes e comentários
-  const photoIds = photos.map(p => p.id)
+  grid.style.display = 'grid'
+  grid.style.gridTemplateColumns = 'repeat(3, 1fr)'
+  grid.style.gap = '12px'
+  grid.style.width = '100%'
+  grid.style.maxWidth = '640px'
+  grid.style.margin = '0 auto'
+
+  if (!galleryPhotosList.length) {
+    grid.innerHTML = '<p style="color:var(--muted);text-align:center;grid-column:1/-1">No photos yet.</p>'
+    return
+  }
+
   const { data: likes } = await db.from('gallery_likes').select('photo_id')
   const { data: comments } = await db.from('gallery_comments').select('photo_id').is('reply_to', null)
-
-  const likeMap = {}
-  const commentMap = {}
+  const likeMap = {}, commentMap = {}
   ;(likes || []).forEach(l => { likeMap[l.photo_id] = (likeMap[l.photo_id] || 0) + 1 })
   ;(comments || []).forEach(c => { commentMap[c.photo_id] = (commentMap[c.photo_id] || 0) + 1 })
 
-  grid.innerHTML = photos.map(p => `
-    <div class="hall-card" onclick="openPhotoDetail(${p.id}, '${p.photo_url}')">
-      <div class="hall-card-img"><img src="${p.photo_url}" loading="lazy" /></div>
-      <div class="hall-card-footer">
-        <span class="hall-card-likes">❤️ ${likeMap[p.id] || 0}</span>
-        <span class="hall-card-comments">💬 ${commentMap[p.id] || 0}</span>
+  grid.innerHTML = galleryPhotosList.map((p, idx) => `
+    <div style="display:flex;flex-direction:column;width:100%;min-width:0;cursor:pointer;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);" onclick="openPhotoDetail(${p.id}, '${p.photo_url}', ${idx})">
+      <div style="width:100%;padding-top:100%;position:relative;background:var(--surface2);">
+        <img src="${p.photo_url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:var(--surface2);" loading="lazy" />
+      </div>
+      <div style="padding:0.35rem 0.5rem;display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;">
+        <span style="color:var(--accent);font-weight:600;">❤️ ${likeMap[p.id] || 0}</span>
+        <span style="color:var(--muted);">💬 ${commentMap[p.id] || 0}</span>
       </div>
     </div>
   `).join('')
 }
 
-async function openPhotoDetail(photoId, photoUrl) {
+async function openPhotoDetail(photoId, photoUrl, index) {
   currentPhotoId = photoId
+  currentPhotoIndex = (index !== undefined) ? index : galleryPhotosList.findIndex(p => p.id === photoId)
   document.getElementById('detail-photo-img').src = photoUrl
   showScreen('screen-photo-detail')
   await loadPhotoDetail(photoId)
+  updateNavButtons()
+}
+
+function updateNavButtons() {
+  const prevBtn = document.getElementById('detail-prev-btn')
+  const nextBtn = document.getElementById('detail-next-btn')
+  if (prevBtn && nextBtn) {
+    prevBtn.style.display = currentPhotoIndex > 0 ? 'flex' : 'none'
+    nextBtn.style.display = currentPhotoIndex < galleryPhotosList.length - 1 ? 'flex' : 'none'
+  }
+}
+
+async function navigatePhoto(direction) {
+  let newIndex = currentPhotoIndex + direction
+  if (newIndex < 0 || newIndex >= galleryPhotosList.length) return
+  currentPhotoIndex = newIndex
+  const photo = galleryPhotosList[currentPhotoIndex]
+  currentPhotoId = photo.id
+  document.getElementById('detail-photo-img').src = photo.photo_url
+  await loadPhotoDetail(photo.id)
+  updateNavButtons()
 }
 
 async function loadPhotoDetail(photoId) {
-  // Likes
   const { count: likeCount } = await db.from('gallery_likes').select('*', { count: 'exact', head: true }).eq('photo_id', photoId)
   document.getElementById('detail-likes-count').textContent = likeCount || 0
   const liked = myLikedPhotos.includes(photoId)
   document.getElementById('detail-like-btn').className = `like-btn ${liked ? 'liked' : ''}`
-
-  // Comentários
   await loadComments(photoId)
 }
 
@@ -469,10 +519,7 @@ async function toggleLike() {
 
 async function loadComments(photoId) {
   const { data: comments } = await db.from('gallery_comments')
-    .select('*')
-    .eq('photo_id', photoId)
-    .is('reply_to', null)
-    .order('created_at', { ascending: true })
+    .select('*').eq('photo_id', photoId).is('reply_to', null).order('created_at', { ascending: true })
 
   const list = document.getElementById('comments-list')
   if (!comments || comments.length === 0) { list.innerHTML = '<p style="color:var(--muted);font-size:0.82rem">No comments yet. Be the first!</p>'; return }
@@ -518,12 +565,10 @@ function openReplyModal(commentId, previewText) {
   document.getElementById('reply-input').value = ''
   document.getElementById('reply-modal').style.display = 'flex'
 }
-
 function closeReplyModal() {
   document.getElementById('reply-modal').style.display = 'none'
   replyTargetId = null
 }
-
 async function submitReply() {
   const input = document.getElementById('reply-input')
   const text = input.value.trim()
@@ -536,7 +581,7 @@ async function submitReply() {
 
 // ========== GALLERY BATTLE ==========
 async function startGalleryBattle() {
-  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes')
+  const { data: photos } = await db.from('gallery_photos').select('id, photo_url, votes, losses')
   if (!photos || photos.length < 2) {
     alert('Not enough photos in the Hall of Fame yet!')
     return
@@ -563,7 +608,6 @@ function loadBattlePair() {
   leftEl.onclick = () => galleryVote('left')
   rightEl.onclick = () => galleryVote('right')
 
-  // Atualiza contador de rodadas
   const roundEl = document.getElementById('battle-round')
   if (roundEl) roundEl.textContent = battleLeft ? `Round ${battleRound} / ${BATTLE_MAX_ROUNDS}` : ''
 
@@ -579,15 +623,12 @@ function loadBattlePair() {
     battleRight = battlePool[1]
     battleSeen.push(battleLeft.id, battleRight.id)
   } else {
-    // Campeão após 10 rodadas
     if (battleRound >= BATTLE_MAX_ROUNDS) {
       showChampion(battleLeft)
       return
     }
-    // Se acabaram os oponentes, reinicia o pool sem o campeão atual
     let pool = available.filter(p => p.id !== battleLeft.id)
     if (pool.length === 0) {
-      // Reinicia seen, mantendo só o campeão como visto
       battleSeen = [battleLeft.id]
       pool = battlePool.filter(p => p.id !== battleLeft.id).sort(() => Math.random() - 0.5)
     }
@@ -608,9 +649,11 @@ async function galleryVote(side) {
   document.getElementById('battle-left').onclick = null
   document.getElementById('battle-right').onclick = null
 
-  // Atualiza votos do vencedor e derrota do perdedor
-  await db.from('gallery_photos').update({ votes: (winner.votes || 0) + 1 }).eq('id', winner.id)
-  await db.from('gallery_photos').update({ losses: (loser.losses || 0) + 1 }).eq('id', loser.id)
+  await fetch('/api/gallery-vote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ winnerId: winner.id, loserId: loser.id })
+  })
   winner.votes = (winner.votes || 0) + 1
   loser.losses = (loser.losses || 0) + 1
 
@@ -619,18 +662,13 @@ async function galleryVote(side) {
   document.getElementById(`battle-${winnerSide}`).classList.add('winner')
   document.getElementById(`battle-${loserSide}`).classList.add('loser')
   document.getElementById(`battle-count-${winnerSide}`).textContent = `❤️ ${winner.votes} votes`
-  document.getElementById(`battle-count-${loserSide}`).textContent = `💀 ${loser.votes || 0} votes`
+  document.getElementById(`battle-count-${loserSide}`).textContent = `💀 ${loser.losses} losses`
 
-  // Vencedor fica na esquerda, perdedor sai
   battleLeft = winner
   battleRight = null
-
   battleRound++
-  // Próxima rodada automaticamente após 1.5s
-  setTimeout(() => {
-    battleRight = null
-    loadBattlePair()
-  }, 1500)
+
+  setTimeout(() => loadBattlePair(), 1500)
 }
 
 function nextBattleRound() {
@@ -639,31 +677,19 @@ function nextBattleRound() {
 }
 
 async function showChampion(photo) {
-  // Busca valor atual do banco antes de incrementar
-  const { data: fresh } = await db.from('gallery_photos')
-    .select('championships')
-    .eq('id', photo.id)
-    .single()
-  
-  const current = (fresh && fresh.championships) || 0
-  const { error } = await db.from('gallery_photos')
-    .update({ championships: current + 1 })
-    .eq('id', photo.id)
-  
-  if (error) {
-    console.error('Championship update error:', error)
-  } else {
-    console.log('Championship registered! New total:', current + 1)
-  }
-  photo.championships = current + 1
-
+  const res = await fetch('/api/gallery-championship', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId: photo.id })
+  })
+  const data = await res.json()
+  photo.championships = data.championships || (photo.championships || 0) + 1
   document.getElementById('champion-img').src = photo.photo_url
   document.getElementById('champion-votes').textContent = photo.votes || 0
   showScreen('screen-champion')
 }
 
-
-// ========== GALLERY UPLOAD (visitante anônimo) ==========
+// ========== GALLERY UPLOAD ==========
 let galleryUploadReturnScreen = 'screen-home'
 
 function showGalleryUpload(returnScreen) {
@@ -719,14 +745,64 @@ async function uploadToGallery() {
 
   status.textContent = '✅ Photo added to the Hall of Fame!'
   setTimeout(() => {
-    if (galleryUploadReturnScreen === 'screen-hall') {
-      loadHallOfFame()
-    } else if (galleryUploadReturnScreen === 'screen-battle') {
-      startGalleryBattle()
-    } else {
-      showScreen(galleryUploadReturnScreen)
-    }
+    if (galleryUploadReturnScreen === 'screen-hall') loadHallOfFame()
+    else if (galleryUploadReturnScreen === 'screen-battle') startGalleryBattle()
+    else showScreen(galleryUploadReturnScreen)
   }, 1500)
+}
+
+
+// ========== USER DELETE ==========
+async function removeFromHall() {
+  const confirmed = await showConfirm('Remove your photo from the Hall of Fame? Your chat profile will remain.')
+  if (!confirmed) return
+
+  const code = localStorage.getItem('my_chat_code')
+  if (!code) return
+
+  const btn = document.getElementById('btn-remove-hall')
+  btn.disabled = true
+  btn.textContent = 'Removing...'
+
+  const res = await fetch('/api/user-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, action: 'remove_gallery' })
+  })
+
+  if (res.ok) {
+    btn.style.display = 'none'
+    document.getElementById('btn-join-hall').style.display = 'block'
+    document.getElementById('stats-gallery-note').textContent = 'Your photo is not in the Hall of Fame yet'
+    document.getElementById('stats-wins').textContent = '—'
+    document.getElementById('stats-losses').textContent = '—'
+    document.getElementById('stats-champ').textContent = '—'
+  } else {
+    btn.textContent = '❌ Error'
+    btn.disabled = false
+  }
+}
+
+async function userDeleteAll() {
+  const confirmed = await showConfirm('Delete EVERYTHING? Your photo, profile and chat history will be permanently removed. This cannot be undone.')
+  if (!confirmed) return
+
+  const code = localStorage.getItem('my_chat_code')
+  if (!code) return
+
+  const res = await fetch('/api/user-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, action: 'delete_all' })
+  })
+
+  if (res.ok) {
+    localStorage.removeItem('my_chat_code')
+    myProfile = null
+    showHome()
+  } else {
+    alert('Error deleting account. Please try again.')
+  }
 }
 
 // ========== ADMIN ==========
@@ -738,56 +814,143 @@ function showAdminLogin() {
 
 async function adminLogin() {
   const password = document.getElementById('admin-password').value
-  const hash = await hashPassword(password)
-  if (hash !== ADMIN_HASH) { document.getElementById('admin-login-error').textContent = 'Wrong password.'; return }
-  loadAdminPanel()
+  if (!password) return
+
+  const btn = document.querySelector('#screen-admin-login .btn-main')
+  btn.disabled = true
+  btn.textContent = 'Verifying...'
+
+  try {
+    const res = await fetch('/api/admin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      document.getElementById('admin-login-error').textContent = 'Wrong password.'
+      btn.disabled = false
+      btn.textContent = 'Enter'
+      return
+    }
+    adminToken = data.token
+    sessionStorage.setItem('admin_token', adminToken)
+    loadAdminPanel()
+  } catch (e) {
+    document.getElementById('admin-login-error').textContent = 'Error connecting. Try again.'
+    btn.disabled = false
+    btn.textContent = 'Enter'
+  }
 }
 
 async function loadAdminPanel() {
+  // Verifica token antes de qualquer coisa
+  const token = adminToken || sessionStorage.getItem('admin_token')
+  if (!token) { showScreen('screen-admin-login'); return }
+
+  try {
+    const verifyRes = await fetch('/api/admin-verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token })
+    })
+    if (!verifyRes.ok) {
+      sessionStorage.removeItem('admin_token')
+      adminToken = null
+      showScreen('screen-admin-login')
+      return
+    }
+  } catch {
+    showScreen('screen-admin-login')
+    return
+  }
+
   showScreen('screen-admin')
-  document.getElementById('admin-conversations').innerHTML = '<p class="status-msg">Loading...</p>'
+  const container = document.getElementById('admin-conversations')
 
-  // Fotos da galeria
-  const { data: galleryPhotos } = await db.from('gallery_photos')
-    .select('id, photo_url, votes, championships')
-    .order('id', { ascending: false })
-
-  const galleryHtml = galleryPhotos && galleryPhotos.length > 0 ? `
-    <h3 class="admin-section-title">🏆 Gallery Photos</h3>
-    <div class="admin-gallery-grid">
-      ${galleryPhotos.map(p => `
-        <div class="admin-gallery-card">
-          <img src="${p.photo_url}" />
-          <div class="admin-gallery-info">
-            <span>❤️ ${p.votes || 0} wins</span>
-            <span>🏆 ${p.championships || 0} champ</span>
-          </div>
-          <button class="admin-delete-btn" onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)">🗑️ Delete</button>
-        </div>
-      `).join('')}
-    </div>
-    <h3 class="admin-section-title" style="margin-top:1.5rem">💬 Conversations</h3>
-  ` : '<h3 class="admin-section-title">💬 Conversations</h3>'
-
-  const { data: convs } = await db.from('chat_conversations')
-    .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
-    .order('started_at', { ascending: false })
-    .limit(50)
-  if (!convs || convs.length === 0) { document.getElementById('admin-conversations').innerHTML = galleryHtml + '<p class="status-msg">No conversations yet.</p>'; return }
-  document.getElementById('admin-conversations').innerHTML = galleryHtml + convs.map(c => `
-    <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
-      <div class="admin-conv-header">
-        <div class="admin-photos"><img src="${c.p1.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p1.code}</span><span class="admin-online ${c.p1.online ? 'on' : ''}"></span></div>
-        <span class="vs-small">💬</span>
-        <div class="admin-photos"><img src="${c.p2.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p2.code}</span><span class="admin-online ${c.p2.online ? 'on' : ''}"></span></div>
-        <div class="admin-meta">
-          <span class="${c.ended_at ? 'ended' : 'active'}">${c.ended_at ? '⚫ Ended' : '🟢 Active'}</span>
-          <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
-        </div>
+  if (!document.getElementById('admin-tabs')) {
+    container.innerHTML = `
+      <div id="admin-tabs" style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+        <button id="admin-tab-gallery" class="btn-main secondary" style="flex:1">📸 Gallery Photos</button>
+        <button id="admin-tab-conv" class="btn-main secondary" style="flex:1">💬 Conversations</button>
       </div>
-      <div class="admin-messages" id="admin-msgs-${c.id}" style="display:none"></div>
-    </div>
-  `).join('')
+      <div id="admin-gallery-section"></div>
+      <div id="admin-conv-section"></div>
+    `
+    document.getElementById('admin-tab-gallery').onclick = () => switchAdminTab('gallery')
+    document.getElementById('admin-tab-conv').onclick = () => switchAdminTab('conversations')
+  }
+  await switchAdminTab(adminActiveTab)
+}
+
+async function switchAdminTab(tab) {
+  adminActiveTab = tab
+  const galleryDiv = document.getElementById('admin-gallery-section')
+  const convDiv = document.getElementById('admin-conv-section')
+  const btnGallery = document.getElementById('admin-tab-gallery')
+  const btnConv = document.getElementById('admin-tab-conv')
+
+  if (tab === 'gallery') {
+    galleryDiv.style.display = 'block'
+    convDiv.style.display = 'none'
+    btnGallery.style.background = 'var(--accent)'
+    btnConv.style.background = ''
+    galleryDiv.innerHTML = '<p class="status-msg">Loading gallery...</p>'
+
+    const { data: galleryPhotos } = await db.from('gallery_photos')
+      .select('id, photo_url, votes, championships')
+      .order('id', { ascending: false })
+
+    if (!galleryPhotos || galleryPhotos.length === 0) {
+      galleryDiv.innerHTML = '<p class="status-msg">No photos in gallery.</p>'
+      return
+    }
+    galleryDiv.innerHTML = `
+      <h3 class="admin-section-title">🏆 Gallery Photos</h3>
+      <div class="admin-gallery-grid">
+        ${galleryPhotos.map(p => `
+          <div class="admin-gallery-card" data-id="${p.id}">
+            <img src="${p.photo_url}" />
+            <div class="admin-gallery-info">
+              <span>❤️ ${p.votes || 0} wins</span>
+              <span>🏆 ${p.championships || 0} champ</span>
+            </div>
+            <button class="admin-delete-btn" onclick="adminDeleteGalleryPhoto(${p.id}, '${p.photo_url}', this)">🗑️ Delete</button>
+          </div>
+        `).join('')}
+      </div>
+    `
+  } else {
+    galleryDiv.style.display = 'none'
+    convDiv.style.display = 'block'
+    btnConv.style.background = 'var(--accent)'
+    btnGallery.style.background = ''
+    convDiv.innerHTML = '<p class="status-msg">Loading conversations...</p>'
+
+    const { data: convs } = await db.from('chat_conversations')
+      .select('*, p1:chat_profiles!profile1_id(photo_url, code, online), p2:chat_profiles!profile2_id(photo_url, code, online)')
+      .order('started_at', { ascending: false })
+      .limit(50)
+
+    if (!convs || convs.length === 0) {
+      convDiv.innerHTML = '<p class="status-msg">No conversations yet.</p>'
+      return
+    }
+    convDiv.innerHTML = convs.map(c => `
+      <div class="admin-conv-card" onclick="loadAdminConvMessages(${c.id}, this)">
+        <div class="admin-conv-header">
+          <div class="admin-photos"><img src="${c.p1.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p1.code}</span><span class="admin-online ${c.p1.online ? 'on' : ''}"></span></div>
+          <span class="vs-small">💬</span>
+          <div class="admin-photos"><img src="${c.p2.photo_url}" class="admin-thumb" /><span class="admin-code">#${c.p2.code}</span><span class="admin-online ${c.p2.online ? 'on' : ''}"></span></div>
+          <div class="admin-meta">
+            <span class="${c.ended_at ? 'ended' : 'active'}">${c.ended_at ? '⚫ Ended' : '🟢 Active'}</span>
+            <small>${new Date(c.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</small>
+          </div>
+        </div>
+        <div class="admin-messages" id="admin-msgs-${c.id}" style="display:none"></div>
+      </div>
+    `).join('')
+  }
 }
 
 async function loadAdminConvMessages(convId, card) {
@@ -807,20 +970,27 @@ async function adminDeleteGalleryPhoto(id, url, btn) {
   btn.disabled = true
   btn.textContent = 'Deleting...'
 
-  // Remove likes e comentários
-  await db.from('gallery_likes').delete().eq('photo_id', id)
-  await db.from('gallery_comments').delete().eq('photo_id', id)
+  const token = adminToken || sessionStorage.getItem('admin_token')
+  if (!token) { btn.textContent = '❌ Not authenticated'; btn.disabled = false; return }
 
-  // Remove da galeria
-  const { error } = await db.from('gallery_photos').delete().eq('id', id)
-  if (error) { btn.textContent = '❌ Error'; return }
-
-  // Remove do storage
-  const fileName = url.split('/PHOTOS/')[1] || url.split('/').pop()
-  await db.storage.from('PHOTOS').remove([fileName])
-
-  // Remove o card da tela
-  btn.closest('.admin-gallery-card').remove()
+  try {
+    const res = await fetch('/api/admin-delete-gallery', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+      body: JSON.stringify({ photoId: id, photoUrl: url })
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      btn.textContent = `❌ ${err.error || 'Error'}`
+      btn.disabled = false
+      return
+    }
+    btn.closest('.admin-gallery-card').remove()
+  } catch (e) {
+    console.error('adminDeleteGalleryPhoto error:', e)
+    btn.textContent = '❌ Error'
+    btn.disabled = false
+  }
 }
 
 // ========== ONLINE COUNT ==========
@@ -848,6 +1018,9 @@ window.addEventListener('load', async () => {
       localStorage.removeItem('my_chat_code')
     }
   }
+  const savedToken = sessionStorage.getItem('admin_token')
+  if (savedToken) adminToken = savedToken
+
   showHome()
   refreshOnlineCount()
 })
@@ -855,13 +1028,3 @@ window.addEventListener('load', async () => {
 window.addEventListener('beforeunload', () => {
   if (myProfile) db.from('chat_profiles').update({ online: false }).eq('id', myProfile.id)
 })
-
-async function joinHallFromStats() {
-  if (!myProfile) return
-  await db.from('chat_profiles').update({ gallery_consent: true }).eq('id', myProfile.id)
-  const { data: existing } = await db.from('gallery_photos').select('id').eq('profile_id', myProfile.id).maybeSingle()
-  if (!existing) {
-    await db.from('gallery_photos').insert({ profile_id: myProfile.id, photo_url: myProfile.photo_url })
-  }
-  await loadProfileStats(myProfile)
-}
